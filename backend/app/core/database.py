@@ -39,11 +39,14 @@ def init_db():
     """
     try:
         # Import models to register them
+        from app.models import cluster, media  # noqa: F401
 
-        # Create pgvector extension when using PostgreSQL
+        # Create all tables
+        Base.metadata.create_all(bind=engine)
+
+        # Create pgvector extension and normalize schema when using PostgreSQL.
         if engine.dialect.name == "postgresql":
             with engine.connect() as conn:
-                # text() required for literal SQL execution in SQLAlchemy 2.0
                 conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
                 conn.execute(
                     text(
@@ -52,10 +55,18 @@ def init_db():
                     )
                 )
                 conn.execute(text("UPDATE media SET liked = false WHERE liked IS NULL"))
+                conn.execute(
+                    text(
+                        "UPDATE clusters SET centroid_vector = NULL WHERE centroid_vector IS NOT NULL"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "ALTER TABLE IF EXISTS clusters "
+                        f"ALTER COLUMN centroid_vector TYPE vector({settings.EMBEDDING_DIM})"
+                    )
+                )
                 conn.commit()
-
-        # Create all tables
-        Base.metadata.create_all(bind=engine)
 
         logger.info("Database initialized successfully")
     except Exception as e:

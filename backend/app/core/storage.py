@@ -4,6 +4,7 @@ MinIO storage configuration and utilities
 
 import json
 from datetime import timedelta
+from urllib.parse import urlparse, urlunparse
 from minio import Minio
 from minio.error import S3Error
 from app.core.config import settings
@@ -123,9 +124,25 @@ def get_file_url(object_name: str, expires: int = 3600) -> str:
     """
     try:
         if settings.MINIO_PUBLIC_READ and settings.MINIO_PUBLIC_ENDPOINT:
-            base = settings.MINIO_PUBLIC_ENDPOINT.rstrip("/")
-            path = object_name.lstrip("/")
-            return f"{base}/{path}"
+            parsed = urlparse(settings.MINIO_PUBLIC_ENDPOINT.rstrip("/"))
+            object_path = object_name.lstrip("/")
+
+            base_path = parsed.path.rstrip("/")
+            if not base_path:
+                public_path = f"/{settings.MINIO_BUCKET}/{object_path}"
+            else:
+                public_path = f"{base_path}/{object_path}"
+
+            return urlunparse(
+                (
+                    parsed.scheme,
+                    parsed.netloc,
+                    public_path,
+                    "",
+                    "",
+                    "",
+                )
+            )
 
         return minio_client.presigned_get_object(
             settings.MINIO_BUCKET, object_name, expires=timedelta(seconds=expires)

@@ -5,84 +5,50 @@ export default function HomePage() {
   return (
     <div className="min-h-screen bg-white">
       {/* Hero */}
-      <div className="max-w-5xl mx-auto px-6 pt-24 pb-16">
-        <div className="text-center mb-16">
-          <h1 className="text-6xl font-light mb-6 text-black tracking-tight">
-            Find
+      <div className="max-w-5xl mx-auto px-6 pt-32 pb-24">
+        <div className="text-center max-w-3xl mx-auto">
+          <h1 className="text-6xl md:text-8xl font-medium tracking-tight text-black mb-8">
+            Your visual memory.
           </h1>
-          <p className="text-xl text-gray-400 mb-12 max-w-2xl mx-auto font-light">
-            AI-powered image intelligence that runs entirely on your device
+          <p className="text-xl text-gray-500 mb-12 font-light">
+            AI-powered image intelligence that runs entirely on your device.
+            Fast, private, and beautiful.
           </p>
           <Link
             href="/upload"
-            className="inline-flex items-center gap-2 px-8 py-4 bg-black text-white text-sm hover:bg-gray-800 transition-colors"
+            className="inline-flex items-center gap-2 px-8 py-4 bg-black text-white text-sm font-medium rounded-full hover:bg-gray-800 transition-transform hover:scale-105 active:scale-95"
           >
             Start Uploading
             <ArrowRight className="w-4 h-4" />
           </Link>
         </div>
+      </div>
 
-        {/* Features */}
-        <div className="grid md:grid-cols-3 gap-12 mt-24">
-          <div>
-            <div className="w-12 h-12 flex items-center justify-center mb-4">
-              <Lock className="w-6 h-6 text-black" />
+      {/* Features */}
+      <div className="max-w-5xl mx-auto px-6 pb-32">
+        <div className="flex flex-col md:flex-row gap-12 justify-center border-t border-gray-100 pt-16">
+          <div className="flex items-center gap-4">
+            <Lock className="w-5 h-5 text-gray-400" />
+            <div>
+              <h3 className="text-sm font-medium text-black">Private</h3>
+              <p className="text-sm text-gray-500">100% local processing</p>
             </div>
-            <h3 className="text-lg font-medium mb-2 text-black">
-              Private by Default
-            </h3>
-            <p className="text-sm text-gray-400 leading-relaxed">
-              All processing happens locally. Your images never leave your
-              device.
-            </p>
           </div>
 
-          <div>
-            <div className="w-12 h-12 flex items-center justify-center mb-4">
-              <Sparkles className="w-6 h-6 text-black" />
+          <div className="flex items-center gap-4">
+            <Sparkles className="w-5 h-5 text-gray-400" />
+            <div>
+              <h3 className="text-sm font-medium text-black">Intelligent</h3>
+              <p className="text-sm text-gray-500">Natural language search</p>
             </div>
-            <h3 className="text-lg font-medium mb-2 text-black">
-              AI-Powered Search
-            </h3>
-            <p className="text-sm text-gray-400 leading-relaxed">
-              Find images using natural language. No tagging required.
-            </p>
           </div>
 
-          <div>
-            <div className="w-12 h-12 flex items-center justify-center mb-4">
-              <ImageIcon className="w-6 h-6 text-black" />
+          <div className="flex items-center gap-4">
+            <ImageIcon className="w-5 h-5 text-gray-400" />
+            <div>
+              <h3 className="text-sm font-medium text-black">Organized</h3>
+              <p className="text-sm text-gray-500">Automatic clustering</p>
             </div>
-            <h3 className="text-lg font-medium mb-2 text-black">
-              Smart Organization
-            </h3>
-            <p className="text-sm text-gray-400 leading-relaxed">
-              Automatic clustering groups similar images together.
-            </p>
-          </div>
-        </div>
-
-        {/* Process */}
-        <div className="mt-32 border-t border-gray-100 pt-16">
-          <h2 className="text-2xl font-light mb-12 text-center text-black">
-            How it works
-          </h2>
-
-          <div className="grid md:grid-cols-4 gap-8">
-            {[
-              { step: "01", title: "Upload", desc: "Drop your images" },
-              { step: "02", title: "Analyze", desc: "AI processes locally" },
-              { step: "03", title: "Search", desc: "Find using language" },
-              { step: "04", title: "Organize", desc: "Auto-grouped clusters" },
-            ].map((item) => (
-              <div key={item.step}>
-                <div className="text-4xl font-light text-gray-200 mb-3">
-                  {item.step}
-                </div>
-                <h4 className="font-medium text-black mb-1">{item.title}</h4>
-                <p className="text-sm text-gray-400">{item.desc}</p>
-              </div>
-            ))}
           </div>
         </div>
       </div>

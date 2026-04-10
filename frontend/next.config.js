@@ -1,4 +1,6 @@
 /** @type {import('next').NextConfig} */
+const standalone = process.env.NEXT_OUTPUT === "standalone";
+
 const nextConfig = {
   reactStrictMode: true,
   images: {
@@ -16,13 +18,13 @@ const nextConfig = {
       },
     ],
   },
-  output: "standalone",
   experimental: {
     ppr: false,
   },
   typescript: {
     ignoreBuildErrors: false,
   },
+  ...(standalone ? { output: "standalone" } : {}),
 };
 
 module.exports = nextConfig;

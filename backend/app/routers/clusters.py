@@ -1,11 +1,11 @@
-"""
-Clusters endpoint for retrieving cluster information
-"""
+"""Clusters endpoints for retrieving cluster information."""
 
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import desc
 from sqlalchemy.orm import Session
 
 from app.core.database import get_db
+from app.core.queue import enqueue_clustering_job
 from app.core.storage import get_file_url
 from app.models.cluster import Cluster
 from app.models.media import Media
@@ -21,14 +21,13 @@ async def get_clusters(db: Session = Depends(get_db)):
     Returns:
         List of clusters with metadata
     """
-    clusters = db.query(Cluster).all()
+    clusters = db.query(Cluster).order_by(desc(Cluster.member_count), Cluster.id).all()
 
     result = []
     for cluster in clusters:
         # Get sample images from cluster
-        sample_media = (
-            db.query(Media).filter(Media.id.in_(cluster.member_ids[:5])).all()
-        )
+        sample_ids = (cluster.member_ids or [])[:5]
+        sample_media = db.query(Media).filter(Media.id.in_(sample_ids)).all()
 
         samples = []
         for media in sample_media:
@@ -73,7 +72,8 @@ async def get_cluster_detail(cluster_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Cluster not found")
 
     # Get all member media
-    members = db.query(Media).filter(Media.id.in_(cluster.member_ids)).all()
+    member_ids = cluster.member_ids or []
+    members = db.query(Media).filter(Media.id.in_(member_ids)).all()
 
     member_list = []
     for media in members:
@@ -105,21 +105,11 @@ async def get_cluster_detail(cluster_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/cluster/run")
-async def trigger_clustering(db: Session = Depends(get_db)):
+async def trigger_clustering():
     """
     Manually trigger clustering job
 
     Returns:
         Job information
     """
-    from redis import Redis
-    from rq import Queue
-    from app.core.config import settings
-    from app.workers.jobs import cluster_images
-
-    redis_conn = Redis.from_url(settings.REDIS_URL)
-    task_queue = Queue(connection=redis_conn)
-
-    job = task_queue.enqueue(cluster_images, job_timeout=600)
-
-    return {"message": "Clustering job started", "job_id": job.id}
+    return enqueue_clustering_job(reason="manual")

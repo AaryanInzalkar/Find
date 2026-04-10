@@ -10,10 +10,9 @@ import io
 import logging
 import mimetypes
 import zipfile
-from redis import Redis
-from rq import Queue  # type: ignore[import-untyped]
 
 from app.core.database import get_db
+from app.core.queue import get_task_queue
 from app.core.storage import upload_file
 from app.core.config import settings
 from app.models.media import Media
@@ -22,10 +21,6 @@ from app.workers.jobs import analyze_image
 logger = logging.getLogger(__name__)
 
 router = APIRouter()
-
-# Initialize Redis queue
-redis_conn = Redis.from_url(settings.REDIS_URL)
-task_queue = Queue(connection=redis_conn)
 
 
 @router.post("/upload")
@@ -194,7 +189,7 @@ def _ingest_image(
     db.commit()
     db.refresh(media)
 
-    job = task_queue.enqueue(
+    job = get_task_queue().enqueue(
         analyze_image, media.id, job_timeout=settings.WORKER_TIMEOUT
     )
 

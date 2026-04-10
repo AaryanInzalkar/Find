@@ -23,24 +23,8 @@ import {
   type MediaItem,
   toggleLike,
 } from "@/lib/api";
+import { resolveMediaUrl } from "@/lib/media";
 import { formatBytes, formatDate, getStatusBadgeClass } from "@/lib/utils";
-
-function buildEncodedUrlFactory(bucket: string, baseUrl: string) {
-  const sanitizedBase = baseUrl.endsWith("/") ? baseUrl.slice(0, -1) : baseUrl;
-
-  return (objectKey?: string | null) => {
-    if (!objectKey) {
-      return null;
-    }
-
-    const encodedKey = objectKey
-      .split("/")
-      .map((segment) => encodeURIComponent(segment))
-      .join("/");
-
-    return `${sanitizedBase}/${bucket}/${encodedKey}`;
-  };
-}
 
 export default function GalleryPage() {
   const [page, setPage] = useState(1);
@@ -57,14 +41,6 @@ export default function GalleryPage() {
   const limit = 24;
 
   const queryClient = useQueryClient();
-
-  const bucket = process.env.NEXT_PUBLIC_MINIO_BUCKET ?? "images";
-  const minioBaseUrl =
-    process.env.NEXT_PUBLIC_MINIO_URL ?? "http://localhost:9000";
-  const buildEncodedUrl = useMemo(
-    () => buildEncodedUrlFactory(bucket, minioBaseUrl),
-    [bucket, minioBaseUrl],
-  );
 
   const galleryQueryKey = useMemo(
     () => ["gallery", page, filter, likedOnly] as const,
@@ -206,23 +182,23 @@ export default function GalleryPage() {
   const detailData = detailQuery.data;
   const isDetailLoading = detailQuery.isLoading || detailQuery.isFetching;
 
-  const detailImageSrc = buildEncodedUrl(
-    detailData?.minio_key ?? selectedItem?.minio_key ?? null,
+  const detailImageSrc = resolveMediaUrl(
+    detailData?.url ?? selectedItem?.url,
+    detailData?.minio_key ?? selectedItem?.minio_key,
   );
   const detailLiked = detailData?.liked ?? selectedItem?.liked ?? false;
+  const detailStatus = detailData?.status ?? selectedItem?.status ?? "pending";
+  const detailClusterId = detailData?.cluster_id ?? selectedItem?.cluster_id;
 
   const detailDownloadUrl = useMemo(() => {
-    if (detailImageSrc) {
-      return detailImageSrc;
-    }
     if (detailData?.url) {
       return detailData.url;
     }
     if (selectedItem?.url) {
       return selectedItem.url;
     }
-    return "";
-  }, [detailImageSrc, detailData?.url, selectedItem?.url]);
+    return detailImageSrc ?? "";
+  }, [detailData?.url, detailImageSrc, selectedItem?.url]);
 
   const filters = [
     { label: "All", value: "all" as const },
@@ -260,32 +236,36 @@ export default function GalleryPage() {
   return (
     <div className="min-h-screen bg-white">
       <div className="mx-auto max-w-7xl px-6 py-12">
-        <div className="mb-12">
-          <h1 className="mb-3 text-4xl font-light text-black">Gallery</h1>
-          <p className="text-sm text-gray-500">Your image collection</p>
+        <div className="mb-12 text-center max-w-2xl mx-auto">
+          <h1 className="mb-4 text-4xl font-medium tracking-tight text-black">
+            Gallery
+          </h1>
+          <p className="text-sm text-gray-500">
+            Your entire visual collection, automatically analyzed and indexed.
+          </p>
         </div>
 
-        <div className="mb-4 flex gap-2 border-b border-gray-100 pb-4">
-          {filters.map(({ label, value }) => (
-            <button
-              type="button"
-              key={value}
-              onClick={() => {
-                setFilter(value);
-                setPage(1);
-              }}
-              className={`px-4 py-2 text-sm font-medium transition-colors ${
-                filter === value
-                  ? "-mb-[17px] border-b-2 border-black text-black"
-                  : "text-gray-400 hover:text-gray-600"
-              }`}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <div className="mb-8 flex flex-col md:flex-row items-center justify-between gap-4 border-b border-gray-100 pb-4">
+          <div className="flex gap-4">
+            {filters.map(({ label, value }) => (
+              <button
+                type="button"
+                key={value}
+                onClick={() => {
+                  setFilter(value);
+                  setPage(1);
+                }}
+                className={`text-sm font-medium transition-colors ${
+                  filter === value
+                    ? "text-black border-b-2 border-black pb-4 -mb-[17px]"
+                    : "text-gray-400 hover:text-gray-900 pb-4 -mb-[17px]"
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
 
-        <div className="mb-8 flex justify-end">
           <button
             type="button"
             onClick={() => {
@@ -295,11 +275,11 @@ export default function GalleryPage() {
             className={`inline-flex items-center gap-2 rounded-full px-4 py-2 text-xs font-medium transition-colors ${
               likedOnly
                 ? "bg-black text-white"
-                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                : "bg-gray-50 text-gray-600 hover:bg-gray-200 hover:text-black"
             }`}
           >
             <Heart className={`h-4 w-4 ${likedOnly ? "fill-current" : ""}`} />
-            {likedOnly ? "Showing liked images" : "Showing all images"}
+            {likedOnly ? "Liked" : "All images"}
           </button>
         </div>
 
@@ -329,7 +309,7 @@ export default function GalleryPage() {
           <>
             <div className="grid grid-cols-2 gap-4 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
               {data.items.map((item) => {
-                const imageSrc = buildEncodedUrl(item.minio_key);
+                const imageSrc = resolveMediaUrl(item.url, item.minio_key);
                 const downloadUrl = imageSrc ?? item.url ?? "";
 
                 return (
@@ -575,8 +555,8 @@ export default function GalleryPage() {
               <div className="flex max-h-[70vh] flex-col gap-6 overflow-y-auto px-6 pb-6 pt-12 md:pt-10">
                 <div>
                   <div className="mb-2 inline-flex items-center gap-2">
-                    <span className={getStatusBadgeClass(selectedItem.status)}>
-                      {selectedItem.status}
+                    <span className={getStatusBadgeClass(detailStatus)}>
+                      {detailStatus}
                     </span>
                     <span className="text-xs text-gray-400">
                       ID {selectedItem.id}
@@ -651,26 +631,40 @@ export default function GalleryPage() {
                 )}
 
                 <div className="space-y-2 text-sm text-gray-700">
-                  {selectedItem.file_size ? (
+                  {(detailData?.file_size ?? selectedItem.file_size) ? (
                     <p>
                       <span className="font-medium text-gray-900">
                         File size:
                       </span>{" "}
-                      {formatBytes(selectedItem.file_size)}
+                      {formatBytes(
+                        detailData?.file_size ?? selectedItem.file_size ?? 0,
+                      )}
                     </p>
                   ) : null}
-                  {selectedItem.width && selectedItem.height ? (
+                  {(detailData?.width ?? selectedItem.width) &&
+                  (detailData?.height ?? selectedItem.height) ? (
                     <p>
                       <span className="font-medium text-gray-900">
                         Dimensions:
                       </span>{" "}
-                      {selectedItem.width} × {selectedItem.height}
+                      {detailData?.width ?? selectedItem.width} ×{" "}
+                      {detailData?.height ?? selectedItem.height}
                     </p>
                   ) : null}
                   <p>
                     <span className="font-medium text-gray-900">Liked:</span>{" "}
                     {detailLiked ? "Yes" : "No"}
                   </p>
+                  {typeof detailClusterId === "number" && (
+                    <p>
+                      <span className="font-medium text-gray-900">
+                        Cluster:
+                      </span>{" "}
+                      <Link href="/clusters" className="text-black underline">
+                        Cluster {detailClusterId}
+                      </Link>
+                    </p>
+                  )}
                   {detailData?.content_type ? (
                     <p>
                       <span className="font-medium text-gray-900">Type:</span>{" "}
@@ -727,6 +721,17 @@ export default function GalleryPage() {
                       </ul>
                     </div>
                   )}
+
+                {detailData?.metadata?.ocr_text && (
+                  <div>
+                    <h3 className="mb-1 text-xs font-semibold uppercase tracking-wide text-gray-500">
+                      OCR text
+                    </h3>
+                    <p className="max-h-40 overflow-y-auto whitespace-pre-wrap text-sm text-gray-700">
+                      {detailData.metadata.ocr_text}
+                    </p>
+                  </div>
+                )}
               </div>
             </div>
           </div>

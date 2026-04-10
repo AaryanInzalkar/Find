@@ -39,8 +39,8 @@ services:
     container_name: find-minio
     command: server /data --console-address ":9001"
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
     ports:
       - "9000:9000"
       - "9001:9001"
@@ -63,16 +63,16 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=${DATABASE_URL}
-      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
-      - MINIO_PUBLIC_ENDPOINT=${MINIO_PUBLIC_ENDPOINT}
-      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
-      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
-      - MINIO_BUCKET=${MINIO_BUCKET}
-      - MINIO_PUBLIC_READ=${MINIO_PUBLIC_READ}
-      - MINIO_SECURE=${MINIO_SECURE}
-      - REDIS_URL=${REDIS_URL}
-      - USE_GPU=${USE_GPU}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://find:find123@db:5432/find}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
+      - MINIO_PUBLIC_ENDPOINT=${MINIO_PUBLIC_ENDPOINT:-}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
+      - MINIO_BUCKET=${MINIO_BUCKET:-images}
+      - MINIO_PUBLIC_READ=${MINIO_PUBLIC_READ:-false}
+      - MINIO_SECURE=${MINIO_SECURE:-false}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - USE_GPU=${USE_GPU:-true}
       - API_HOST=0.0.0.0
       - API_PORT=8000
       - PYTHONUNBUFFERED=1
@@ -104,18 +104,18 @@ services:
       args:
         BASE_IMAGE: ${BACKEND_BASE_IMAGE:-nvidia/cuda:12.1.1-runtime-ubuntu22.04}
     container_name: find-worker
-    command: rq worker --url ${REDIS_URL} high default low
+    command: rq worker --url ${REDIS_URL:-redis://redis:6379} high default low
     environment:
-      - DATABASE_URL=${DATABASE_URL}
-      - MINIO_ENDPOINT=${MINIO_ENDPOINT}
-      - MINIO_PUBLIC_ENDPOINT=${MINIO_PUBLIC_ENDPOINT}
-      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY}
-      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY}
-      - MINIO_BUCKET=${MINIO_BUCKET}
-      - MINIO_PUBLIC_READ=${MINIO_PUBLIC_READ}
-      - MINIO_SECURE=${MINIO_SECURE}
-      - REDIS_URL=${REDIS_URL}
-      - USE_GPU=${USE_GPU}
+      - DATABASE_URL=${DATABASE_URL:-postgresql://find:find123@db:5432/find}
+      - MINIO_ENDPOINT=${MINIO_ENDPOINT:-minio:9000}
+      - MINIO_PUBLIC_ENDPOINT=${MINIO_PUBLIC_ENDPOINT:-}
+      - MINIO_ACCESS_KEY=${MINIO_ACCESS_KEY:-minioadmin}
+      - MINIO_SECRET_KEY=${MINIO_SECRET_KEY:-minioadmin}
+      - MINIO_BUCKET=${MINIO_BUCKET:-images}
+      - MINIO_PUBLIC_READ=${MINIO_PUBLIC_READ:-false}
+      - MINIO_SECURE=${MINIO_SECURE:-false}
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379}
+      - USE_GPU=${USE_GPU:-true}
       - PYTHONUNBUFFERED=1
     volumes:
       - ./backend:/app
@@ -147,8 +147,8 @@ services:
       - "3000:3000"
     environment:
       - NEXT_PUBLIC_API_URL=http://localhost:8000
-      - NEXT_PUBLIC_MINIO_BUCKET=${NEXT_PUBLIC_MINIO_BUCKET}
-      - NEXT_PUBLIC_MINIO_URL=${NEXT_PUBLIC_MINIO_URL}
+      - NEXT_PUBLIC_MINIO_BUCKET=${NEXT_PUBLIC_MINIO_BUCKET:-images}
+      - NEXT_PUBLIC_MINIO_URL=${NEXT_PUBLIC_MINIO_URL:-http://localhost:9000}
       - NODE_ENV=production
     depends_on:
       - api

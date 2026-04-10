@@ -9,16 +9,87 @@ import {
   Upload,
   XCircle,
 } from "lucide-react";
-import { useCallback, useMemo, useState } from "react";
+import Link from "next/link";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { toast } from "sonner";
-import { type UploadResult, uploadImages, uploadImagesBulk } from "@/lib/api";
+import {
+  getJobStatus,
+  type JobStatus,
+  type UploadResponse,
+  type UploadResult,
+  uploadImages,
+  uploadImagesBulk,
+} from "@/lib/api";
 
 type UploadMode = "single" | "bulk";
+type ProcessingState = "queued" | "processing" | "indexed" | "failed";
+
+type UploadListItem = UploadResult & {
+  jobStatus?: JobStatus["status"];
+  processingState?: ProcessingState;
+};
+
+function hydrateResults(response: UploadResponse) {
+  return response.results.map<UploadListItem>((result) => ({
+    ...result,
+    jobStatus: result.status === "uploaded" ? "queued" : undefined,
+    processingState: result.status === "uploaded" ? "queued" : undefined,
+  }));
+}
+
+function getProcessingState(jobStatus?: JobStatus["status"]): ProcessingState {
+  if (jobStatus === "finished") {
+    return "indexed";
+  }
+  if (jobStatus === "failed") {
+    return "failed";
+  }
+  if (jobStatus === "started") {
+    return "processing";
+  }
+  return "queued";
+}
+
+function getDisplayStatus(item: UploadListItem) {
+  if (item.status === "duplicate") {
+    return "duplicate";
+  }
+  if (item.status === "failed") {
+    return "upload failed";
+  }
+  if (item.processingState === "indexed") {
+    return "indexed";
+  }
+  if (item.processingState === "failed") {
+    return "processing failed";
+  }
+  if (item.processingState === "processing") {
+    return "processing";
+  }
+  return "queued";
+}
+
+function getStatusClasses(item: UploadListItem) {
+  if (item.status === "duplicate") {
+    return "bg-yellow-100 text-yellow-800";
+  }
+  if (item.status === "failed" || item.processingState === "failed") {
+    return "bg-red-100 text-red-700";
+  }
+  if (item.processingState === "indexed") {
+    return "bg-green-100 text-green-700";
+  }
+  if (item.processingState === "processing") {
+    return "bg-blue-100 text-blue-700";
+  }
+  return "bg-gray-100 text-gray-700";
+}
 
 export default function UploadPage() {
-  const [uploadedFiles, setUploadedFiles] = useState<UploadResult[]>([]);
+  const [uploadedFiles, setUploadedFiles] = useState<UploadListItem[]>([]);
   const [mode, setMode] = useState<UploadMode>("single");
+
   const parsedBulkLimit = Number(
     process.env.NEXT_PUBLIC_MAX_BULK_FILES ?? "200",
   );
@@ -30,9 +101,9 @@ export default function UploadPage() {
   const uploadMutation = useMutation({
     mutationFn: uploadImages,
     onSuccess: (data) => {
-      setUploadedFiles((prev) => [...data.results, ...prev]);
+      setUploadedFiles((prev) => [...hydrateResults(data), ...prev]);
       toast.success(
-        `Processed ${data.total} file${data.total === 1 ? "" : "s"}`,
+        `Queued ${data.total} file${data.total === 1 ? "" : "s"} for analysis`,
       );
     },
     onError: () => {
@@ -43,12 +114,12 @@ export default function UploadPage() {
   const bulkUploadMutation = useMutation({
     mutationFn: uploadImagesBulk,
     onSuccess: (data) => {
-      setUploadedFiles((prev) => [...data.results, ...prev]);
+      setUploadedFiles((prev) => [...hydrateResults(data), ...prev]);
       const uploadedCount = data.results.filter(
         (item) => item.status === "uploaded",
       ).length;
       toast.success(
-        `Archive processed (${uploadedCount} new upload${
+        `Archive accepted (${uploadedCount} new upload${
           uploadedCount === 1 ? "" : "s"
         })`,
       );
@@ -59,6 +130,86 @@ export default function UploadPage() {
   });
 
   const isUploading = uploadMutation.isPending || bulkUploadMutation.isPending;
+
+  const activeJobs = useMemo(
+    () =>
+      uploadedFiles.filter(
+        (item) =>
+          item.job_id &&
+          item.status === "uploaded" &&
+          item.processingState !== "indexed" &&
+          item.processingState !== "failed",
+      ),
+    [uploadedFiles],
+  );
+
+  useEffect(() => {
+    if (activeJobs.length === 0) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const pollJobs = async () => {
+      const jobStatuses = await Promise.all(
+        activeJobs.map(async (item) => {
+          if (!item.job_id) {
+            return null;
+          }
+
+          try {
+            return await getJobStatus(item.job_id);
+          } catch {
+            return {
+              job_id: item.job_id,
+              status: "failed",
+              error: "Could not reach the job status endpoint.",
+            } as JobStatus;
+          }
+        }),
+      );
+
+      if (cancelled) {
+        return;
+      }
+
+      setUploadedFiles((current) =>
+        current.map((item) => {
+          if (!item.job_id) {
+            return item;
+          }
+
+          const job = jobStatuses.find(
+            (entry) => entry?.job_id === item.job_id,
+          );
+          if (!job) {
+            return item;
+          }
+
+          const processingState = getProcessingState(job.status);
+          return {
+            ...item,
+            jobStatus: job.status,
+            processingState,
+            error:
+              processingState === "failed"
+                ? (job.error ?? item.error)
+                : item.error,
+          };
+        }),
+      );
+    };
+
+    void pollJobs();
+    const intervalId = window.setInterval(() => {
+      void pollJobs();
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      window.clearInterval(intervalId);
+    };
+  }, [activeJobs]);
 
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
@@ -135,85 +286,109 @@ export default function UploadPage() {
   const isDragActive =
     mode === "single" ? isSingleDragActive : isBulkDragActive;
   const fileRejections = mode === "single" ? singleRejections : bulkRejections;
+
   const helperText = useMemo(() => {
     if (mode === "single") {
       return "JPEG, PNG, WebP, GIF • Max 50MB each";
     }
+
     return `Upload a ZIP archive up to ${maxBulkFiles} images`;
   }, [mode, maxBulkFiles]);
 
+  const stats = useMemo(
+    () => ({
+      queued: uploadedFiles.filter((item) => item.processingState === "queued")
+        .length,
+      processing: uploadedFiles.filter(
+        (item) => item.processingState === "processing",
+      ).length,
+      indexed: uploadedFiles.filter(
+        (item) => item.processingState === "indexed",
+      ).length,
+      failed: uploadedFiles.filter(
+        (item) => item.status === "failed" || item.processingState === "failed",
+      ).length,
+      duplicates: uploadedFiles.filter((item) => item.status === "duplicate")
+        .length,
+    }),
+    [uploadedFiles],
+  );
+
+  const showActions = stats.indexed > 0 || stats.duplicates > 0;
+
   return (
     <div className="min-h-screen bg-white">
-      <div className="max-w-4xl mx-auto px-6 py-12">
-        <div className="mb-12">
-          <h1 className="text-4xl font-light mb-3 text-black">Upload</h1>
-          <p className="text-gray-500 text-sm">Add images to analyze with AI</p>
+      <div className="mx-auto max-w-3xl px-6 py-12">
+        <div className="mb-12 text-center">
+          <h1 className="mb-3 text-4xl font-medium tracking-tight text-black">
+            Upload
+          </h1>
+          <p className="text-sm text-gray-500">
+            Add images to analyze. Semantic search and clustering run locally in
+            the background.
+          </p>
         </div>
 
-        <div className="flex gap-2 mb-6">
+        <div className="mb-6 flex justify-center gap-2">
           <button
             type="button"
             onClick={() => setMode("single")}
-            className={`px-4 py-2 text-sm font-medium border transition-colors ${
+            className={`px-6 py-2 rounded-full text-sm font-medium transition-colors ${
               mode === "single"
-                ? "border-black text-black"
-                : "border-gray-200 text-gray-500 hover:text-black"
+                ? "bg-black text-white"
+                : "bg-gray-100 text-gray-500 hover:text-black hover:bg-gray-200"
             }`}
           >
-            Individual files
+            Files
           </button>
           <button
             type="button"
             onClick={() => setMode("bulk")}
-            className={`px-4 py-2 text-sm font-medium border transition-colors ${
+            className={`px-6 py-2 rounded-full text-sm font-medium transition-colors ${
               mode === "bulk"
-                ? "border-black text-black"
-                : "border-gray-200 text-gray-500 hover:text-black"
+                ? "bg-black text-white"
+                : "bg-gray-100 text-gray-500 hover:text-black hover:bg-gray-200"
             }`}
           >
-            ZIP archive
+            ZIP Archive
           </button>
         </div>
 
         <div
           {...activeRootProps()}
-          className={`
-            border-2 border-dashed rounded-sm p-16 text-center cursor-pointer transition-all
-            ${
-              isDragActive
-                ? "border-black bg-gray-50"
-                : "border-gray-200 hover:border-gray-300"
-            }
-            ${isUploading ? "opacity-50 pointer-events-none" : ""}
-          `}
+          className={`rounded-2xl p-16 text-center cursor-pointer transition-all ${
+            isDragActive
+              ? "bg-gray-100 scale-[1.02]"
+              : "bg-gray-50 hover:bg-gray-100"
+          } ${isUploading ? "pointer-events-none opacity-50" : ""}`}
         >
           <input {...activeInputProps()} />
           {mode === "single" ? (
-            <Upload className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+            <Upload className="mx-auto mb-4 h-8 w-8 text-gray-400" />
           ) : (
-            <Package className="w-12 h-12 mx-auto mb-4 text-gray-300" />
+            <Package className="mx-auto mb-4 h-8 w-8 text-gray-400" />
           )}
 
           {isDragActive ? (
-            <p className="text-base font-medium text-black">Drop images here</p>
+            <p className="text-base font-medium text-black">Drop to upload</p>
           ) : (
             <>
-              <p className="text-base font-medium mb-2 text-black">
+              <p className="mb-1 text-base font-medium text-black">
                 {mode === "single"
-                  ? "Drop images or click to browse"
-                  : "Drop a ZIP archive or click to browse"}
+                  ? "Drop images here"
+                  : "Drop a ZIP archive here"}
               </p>
-              <p className="text-sm text-gray-400">{helperText}</p>
+              <p className="text-sm text-gray-500">{helperText}</p>
             </>
           )}
         </div>
 
         {fileRejections.length > 0 && (
-          <div className="mt-6 p-4 bg-red-50 border border-red-100 rounded-sm">
-            <p className="text-sm font-medium text-red-900 mb-2">
+          <div className="mt-6 rounded-xl bg-red-50 p-4">
+            <p className="mb-2 text-sm font-medium text-red-900">
               Some files were rejected:
             </p>
-            <ul className="text-sm text-red-700 space-y-1">
+            <ul className="space-y-1 text-sm text-red-700">
               {fileRejections.map(({ file, errors }) => (
                 <li key={file.name}>
                   {file.name}: {errors[0]?.message}
@@ -223,69 +398,78 @@ export default function UploadPage() {
           </div>
         )}
 
-        {isUploading && (
-          <div className="mt-6 flex items-center gap-3 text-gray-600">
-            <Loader2 className="w-5 h-5 animate-spin" />
-            <span className="text-sm">Uploading...</span>
+        {(isUploading || activeJobs.length > 0) && (
+          <div className="mt-8 text-center text-gray-500">
+            <Loader2 className="mx-auto mb-2 h-5 w-5 animate-spin" />
+            <p className="text-sm font-medium text-black">
+              {isUploading
+                ? "Uploading..."
+                : `Analyzing ${activeJobs.length} image${activeJobs.length === 1 ? "" : "s"}...`}
+            </p>
+            <p className="text-xs text-gray-400 mt-1">Indexing updates live.</p>
           </div>
         )}
 
-        {uploadedFiles.length > 0 && !isUploading && (
-          <div className="mt-8 space-y-3">
-            {uploadedFiles.map((result, idx) => (
-              <div
-                key={`${result.filename}-${idx}`}
-                className="flex items-center justify-between p-4 border border-gray-100 rounded-sm"
-              >
-                <div className="flex items-center gap-3">
-                  {result.status === "uploaded" && (
-                    <CheckCircle className="w-5 h-5 text-green-600" />
-                  )}
-                  {result.status === "duplicate" && (
-                    <ImageIcon className="w-5 h-5 text-yellow-600" />
-                  )}
-                  {result.status === "failed" && (
-                    <XCircle className="w-5 h-5 text-red-600" />
-                  )}
+        {showActions && (
+          <div className="mt-8 flex justify-center gap-4">
+            <Link
+              href="/gallery"
+              className="rounded-full bg-black px-6 py-2.5 text-sm font-medium text-white transition-transform hover:scale-105"
+            >
+              Open gallery
+            </Link>
+            <Link
+              href="/clusters"
+              className="rounded-full border border-gray-200 px-6 py-2.5 text-sm font-medium text-black transition-colors hover:border-black hover:bg-gray-50"
+            >
+              View clusters
+            </Link>
+          </div>
+        )}
 
-                  <div>
-                    <p className="text-sm font-medium text-black">
-                      {result.filename}
-                    </p>
-                    {result.status === "uploaded" && (
-                      <p className="text-xs text-gray-500">Processing...</p>
-                    )}
-                    {result.status === "duplicate" && (
-                      <p className="text-xs text-gray-500">Already exists</p>
-                    )}
-                    {result.status === "failed" && (
-                      <p className="text-xs text-red-600">
-                        {result.error || "Failed"}
+        {uploadedFiles.length > 0 && (
+          <div className="mt-12">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-medium text-black">Recent Uploads</h3>
+              <span className="text-xs text-gray-500">
+                {uploadedFiles.length} total
+              </span>
+            </div>
+            <div className="space-y-2">
+              {uploadedFiles.map((result, idx) => {
+                const displayStatus = getDisplayStatus(result);
+
+                return (
+                  <div
+                    key={`${result.filename}-${idx}`}
+                    className="flex items-center justify-between rounded-xl bg-gray-50 px-4 py-3"
+                  >
+                    <div className="flex items-center gap-3">
+                      {result.status === "duplicate" ? (
+                        <ImageIcon className="h-4 w-4 text-yellow-500" />
+                      ) : result.status === "failed" ||
+                        result.processingState === "failed" ? (
+                        <XCircle className="h-4 w-4 text-red-500" />
+                      ) : result.processingState === "indexed" ? (
+                        <CheckCircle className="h-4 w-4 text-green-500" />
+                      ) : (
+                        <Loader2 className="h-4 w-4 animate-spin text-blue-500" />
+                      )}
+
+                      <p className="text-sm font-medium text-black truncate max-w-[200px] sm:max-w-xs">
+                        {result.filename}
                       </p>
-                    )}
-                  </div>
-                </div>
+                    </div>
 
-                <span
-                  className={`
-                  px-3 py-1 text-xs font-medium rounded-full
-                  ${
-                    result.status === "uploaded"
-                      ? "bg-green-100 text-green-700"
-                      : ""
-                  }
-                  ${
-                    result.status === "duplicate"
-                      ? "bg-yellow-100 text-yellow-700"
-                      : ""
-                  }
-                  ${result.status === "failed" ? "bg-red-100 text-red-700" : ""}
-                `}
-                >
-                  {result.status}
-                </span>
-              </div>
-            ))}
+                    <span
+                      className={`px-3 py-1 rounded-full text-xs font-medium ${getStatusClasses(result)}`}
+                    >
+                      {displayStatus}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
           </div>
         )}
       </div>

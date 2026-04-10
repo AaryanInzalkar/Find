@@ -1,162 +1,183 @@
-# Find — Local-First AI Image Intelligence Platform
+# Find
 
-**Find** is a privacy-first, fully local AI-powered image analysis and search platform. All processing happens on your device — no cloud storage, no external APIs.
+Find is a local-first AI image intelligence platform for uploading, indexing, searching, and clustering images on your own machine.
 
-## 🎯 Features
+All image processing, vector generation, and search stay inside your local stack.
 
-- **Local-First**: All data stays on your machine
-- **AI-Powered Analysis**: Object detection, scene captioning, OCR, face recognition
-- **Semantic Search**: Find images using natural language queries
-- **Smart Clustering**: Automatically groups related images
-- **Vector Embeddings**: CLIP-based image and text embeddings
-- **Fast Search**: PostgreSQL with pgvector for similarity search
+## What It Does
 
-## 🏗️ Architecture
+- Upload individual images or ZIP archives
+- Extract captions, detected objects, OCR text, EXIF metadata, and image dimensions
+- Generate hybrid image embeddings for semantic search
+- Automatically cluster related images after indexing completes
+- Browse a gallery, inspect image details, like/delete media, and review cluster members
 
-```
-┌─────────────┐      ┌──────────────┐      ┌─────────────┐
-│  Next.js    │─────▶│   FastAPI    │─────▶│  PostgreSQL │
-│  Frontend   │      │   Backend    │      │  + pgvector │
-└─────────────┘      └──────────────┘      └─────────────┘
-                           │
-                           ├─────▶ MinIO (Object Storage)
-                           ├─────▶ Redis (Job Queue)
-                           └─────▶ RQ Workers (ML Pipeline)
-```
+## Stack
 
-## 📖 Usage
+- Frontend: Next.js 16.2, React 19, React Query, Tailwind CSS, Biome
+- Backend: FastAPI, SQLAlchemy, PostgreSQL, pgvector, Redis, RQ, MinIO
+- ML pipeline:
+  - Object detection: YOLOv10
+  - Captioning: Florence-2
+  - OCR: PaddleOCR
+  - Embeddings: SigLIP via `open-clip`
+  - Clustering: HDBSCAN
 
-### Upload Images
+## Architecture
 
-1. Navigate to http://localhost:3000/upload
-2. Drag and drop images or click to browse
-3. Monitor processing status in real-time
-
-### Search
-
-Use natural language queries:
-
-- "sunset over mountains"
-- "people smiling"
-- "documents with text"
-- "cats sleeping"
-
-### View Clusters
-
-Navigate to `/clusters` to see 3D visualization of image relationships.
-
-## 🗂️ Project Structure
-
-```
-find/
-├── frontend/              # Next.js application
-│   ├── app/              # App router pages
-│   ├── components/       # React components
-│   ├── lib/              # Utilities and API client
-│   └── public/           # Static assets
-│
-├── backend/              # FastAPI application
-│   ├── app/
-│   │   ├── main.py      # FastAPI entry point
-│   │   ├── routers/     # API endpoints
-│   │   ├── models/      # SQLAlchemy models
-│   │   ├── workers/     # RQ job definitions
-│   │   └── ml/          # ML pipeline modules
-│   ├── requirements.txt
-│   └── Dockerfile
-│
-├── docker-compose.yml    # Orchestration
-└── .env.example         # Environment template
+```text
+Next.js frontend
+    |
+    v
+FastAPI API
+    |
+    +--> PostgreSQL + pgvector  (metadata, embeddings, clusters)
+    +--> MinIO                  (image object storage)
+    +--> Redis + RQ             (background analysis and clustering jobs)
+            |
+            v
+        ML worker
 ```
 
-## 🔧 Configuration
+## Core Flow
 
-Create a `.env` file:
+1. The frontend uploads images to `/api/upload` or `/api/upload/bulk`.
+2. The backend stores files in MinIO and creates `media` rows in PostgreSQL.
+3. Each upload is queued for background processing through RQ.
+4. The worker extracts metadata and generates the hybrid embedding.
+5. After indexing succeeds, the backend automatically queues a clustering job.
+6. The frontend polls job status and updates gallery/search/cluster views.
+
+## One-Command Start
+
+From the repository root:
+
+```bash
+docker compose up --build
+```
+
+This is the intended demo command.
+
+Notes:
+
+- The current Docker setup is GPU-oriented and expects NVIDIA GPU access.
+- If you already have a root `.env`, Docker Compose will use it.
+- If you do not have a `.env`, the compose file now provides sensible defaults for local demo startup.
+
+## URLs
+
+- Frontend: `http://localhost:3000`
+- Backend API: `http://localhost:8000`
+- MinIO API: `http://localhost:9000`
+- MinIO console: `http://localhost:9001`
+
+## Configuration
+
+The included `.env.example` matches the current stack.
+
+Important variables:
 
 ```env
-# Database
 DATABASE_URL=postgresql://find:find123@db:5432/find
 
-# MinIO
+MINIO_ROOT_USER=minioadmin
+MINIO_ROOT_PASSWORD=minioadmin
 MINIO_ENDPOINT=minio:9000
 MINIO_ACCESS_KEY=minioadmin
 MINIO_SECRET_KEY=minioadmin
 MINIO_BUCKET=images
+MINIO_SECURE=false
+MINIO_PUBLIC_READ=false
+MINIO_PUBLIC_ENDPOINT=http://localhost:9000/images
 
-# Redis
 REDIS_URL=redis://redis:6379
 
-# API
-API_HOST=0.0.0.0
-API_PORT=8000
+NEXT_PUBLIC_API_URL=http://localhost:8000
+NEXT_PUBLIC_MINIO_BUCKET=images
+NEXT_PUBLIC_MINIO_URL=http://localhost:9000
+
+CLIP_MODEL=ViT-B-16-SigLIP
+CLIP_PRETRAINED=webli
+BLIP_MODEL=microsoft/Florence-2-base
+YOLO_MODEL=yolov10b.pt
+USE_GPU=true
 ```
 
-## 🧠 ML Pipeline
+## Privacy Model
 
-Each uploaded image is processed through:
+- Images stay in your local MinIO instance
+- Search embeddings stay in your local PostgreSQL database
+- The frontend now uses backend-issued image URLs, so private MinIO mode works correctly
+- Public object access is optional and disabled by default
 
-1. **Object Detection** (YOLOv8) - Identifies objects and bounding boxes
-2. **Captioning** (BLIP-2) - Generates natural language description
-3. **OCR** (Tesseract) - Extracts text from image
-4. **Face Detection** (InsightFace) - Detects and embeds faces
-5. **CLIP Embedding** (OpenCLIP) - Creates semantic vector
-6. **Clustering** (HDBSCAN) - Groups similar images
+## Main Pages
 
-## 📊 Database Schema
+- `/upload`
+  - Upload individual files or ZIP archives
+  - Live job status polling for indexing progress
+  - Automatic clustering notice and post-upload shortcuts
+- `/gallery`
+  - Paginated media browser
+  - Like, download, delete, and image detail modal
+  - Detail view includes caption, objects, OCR text, and metadata
+- `/search`
+  - Natural-language semantic search over indexed images
+  - Similarity score and overlay metadata in results
+- `/clusters`
+  - Automatic cluster discovery view
+  - Manual re-clustering trigger with job status
+  - Cluster detail modal with member previews and captions
 
-### Media Table
+## Backend Endpoints
 
-```sql
-CREATE TABLE media (
-  id SERIAL PRIMARY KEY,
-  file_hash TEXT UNIQUE,
-  minio_key TEXT,
-  filename TEXT,
-  created_at TIMESTAMP DEFAULT NOW(),
-  status TEXT,
-  exif_json JSONB,
-  metadata_json JSONB,
-  cluster_id INT,
-  vector vector(768)
-);
-```
+- `POST /api/upload`
+- `POST /api/upload/bulk`
+- `GET /api/status/{job_id}`
+- `GET /api/gallery`
+- `GET /api/image/{media_id}`
+- `POST /api/image/{media_id}/like`
+- `DELETE /api/image/{media_id}`
+- `GET /api/search?q=...`
+- `GET /api/clusters`
+- `GET /api/cluster/{cluster_id}`
+- `POST /api/cluster/run`
 
-### Clusters Table
+## Data Model
 
-```sql
-CREATE TABLE clusters (
-  id SERIAL PRIMARY KEY,
-  cluster_type TEXT,
-  centroid_vector vector(768),
-  member_ids INT[],
-  created_at TIMESTAMP DEFAULT NOW()
-);
-```
+### `media`
 
-## 🔌 API Endpoints
+Stores:
 
-| Method | Path                    | Description                  |
-| ------ | ----------------------- | ---------------------------- |
-| POST   | `/api/upload`           | Upload images for processing |
-| GET    | `/api/status/{id}`      | Check processing status      |
-| GET    | `/api/gallery`          | List all processed images    |
-| GET    | `/api/image/{id}`       | Get image details            |
-| GET    | `/api/search?q=<query>` | Semantic search              |
-| GET    | `/api/clusters`         | Get cluster data             |
+- file hash
+- object storage key
+- filename and content type
+- processing status
+- EXIF metadata
+- AI metadata JSON
+- liked flag
+- cluster ID
+- pgvector embedding
 
-## 🛠️ Development
+### `clusters`
 
-### Backend Development
+Stores:
 
-```bash
-cd backend
-python -m venv venv
-source venv/bin/activate  # On Windows: .\venv\Scripts\activate
-pip install -r requirements.txt
-uvicorn app.main:app --reload
-```
+- cluster type
+- optional label and description
+- member image IDs
+- member count
+- centroid vector
 
-### Frontend Development
+## Clustering Behavior
+
+- Clustering runs automatically after indexing jobs finish.
+- Manual clustering is still exposed in the frontend for demos and refreshes.
+- Each clustering run rebuilds cluster state from the current indexed dataset.
+- Stale cluster rows and stale `cluster_id` references are cleared before rebuilding.
+
+## Local Development
+
+### Frontend
 
 ```bash
 cd frontend
@@ -164,62 +185,48 @@ pnpm install
 pnpm dev
 ```
 
-### Database Migrations
+### Backend
 
 ```bash
 cd backend
-alembic revision --autogenerate -m "Description"
-alembic upgrade head
+python -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+uvicorn app.main:app --reload
 ```
 
-## 🐛 Troubleshooting
+## Database Notes
 
-**Models not downloading?**
+- The backend creates tables on startup.
+- PostgreSQL `vector` extension is enabled automatically when available.
+- `backend/migrate_db.py` is included for vector column maintenance tasks.
 
-- Check internet connection on first run
-- Models are cached in Docker volumes
+## Demo Tips
 
-**Out of memory?**
+- Upload a small themed batch first, such as pets, street scenes, or documents.
+- Wait for upload jobs to finish indexing on the upload page.
+- Show gallery detail view to demonstrate extracted caption, objects, and OCR text.
+- Run a semantic search with a natural language sentence.
+- Open the clusters page to show automatic grouping and drill into a cluster.
 
-- Reduce batch size in worker config
-- Increase Docker memory allocation
+## Troubleshooting
 
-**Slow processing?**
+### Images do not render
 
-- Enable GPU support (CUDA)
-- Reduce image resolution before upload
+- Confirm the API is returning image `url` values from MinIO.
+- If you enabled public MinIO reads, set `MINIO_PUBLIC_ENDPOINT` consistently.
 
-## 🔐 Privacy & Security
+### Clusters do not appear
 
-- **Zero Cloud Dependencies**: Everything runs locally
-- **No Telemetry**: No tracking or data collection
-- **Local Storage**: Images never leave your machine
-- **Encrypted Storage**: Optional MinIO encryption support
+- Make sure multiple images have completed indexing.
+- Check the worker logs.
+- Trigger clustering manually from `/clusters` if you want an immediate rerun.
 
-## 📈 Performance
+### Slow first run
 
-- **Lightweight Mode**: Basic metadata + CLIP embeddings (~2s/image)
-- **Full Analysis**: All ML models (~10-15s/image on CPU)
-- **GPU Acceleration**: 5-10x faster with CUDA-enabled GPU
+- Model downloads happen on the first startup.
+- Cached models are stored in the Docker volume mounted at `model_cache`.
 
-## 🚧 Roadmap
+## License
 
-- [ ] Face labeling and custom tags
-- [ ] Timeline view (by EXIF date)
-- [ ] Local model fine-tuning
-- [ ] PWA for offline use
-- [ ] Mobile app (React Native)
-- [ ] Video analysis support
-- [ ] Duplicate detection
-
-## 📄 License
-
-MIT License - See LICENSE file for details
-
-## 🤝 Contributing
-
-Contributions welcome! Please open an issue or PR.
-
----
-
-**Built with ❤️ for privacy-conscious users**
+MIT

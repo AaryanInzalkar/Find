@@ -21,10 +21,17 @@ def migrate_db():
             # Check current dimension
             logger.info("Clearing existing vectors to allow dimension change...")
             conn.execute(text("UPDATE media SET vector = NULL;"))
+            conn.execute(text("UPDATE clusters SET centroid_vector = NULL;"))
 
             logger.info("Altering media table vector column to 768 dimensions...")
             conn.execute(
                 text("ALTER TABLE media ALTER COLUMN vector TYPE vector(768);")
+            )
+            logger.info("Altering cluster centroid column to 768 dimensions...")
+            conn.execute(
+                text(
+                    "ALTER TABLE clusters ALTER COLUMN centroid_vector TYPE vector(768);"
+                )
             )
             conn.commit()
             logger.info("✅ Successfully updated vector column dimension.")

@@ -20,13 +20,13 @@ class CLIPEmbedder:
 
     def __init__(self):
         self.manager = get_model_manager()
-        logger.info("CLIPEmbedder initialized for model: ViT-B-16-SigLIP")
+        logger.info("CLIPEmbedder initialized for model: %s", settings.CLIP_MODEL)
 
     def _load_model(self):
         """Loader function for ModelManager"""
-        model_name = "ViT-B-16-SigLIP"
-        pretrained = "webli"
-        logger.info(f"Loading SigLIP model: {model_name}")
+        model_name = settings.CLIP_MODEL
+        pretrained = settings.CLIP_PRETRAINED
+        logger.info("Loading SigLIP model: %s (%s)", model_name, pretrained)
 
         device = "cuda" if settings.USE_GPU and torch.cuda.is_available() else "cpu"
 

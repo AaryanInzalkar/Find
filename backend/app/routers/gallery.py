@@ -81,7 +81,14 @@ async def get_gallery(
 
         items.append(item)
 
-    return {"items": items, "total": total, "skip": skip, "limit": limit}
+    page = (skip // limit) + 1 if limit else 1
+    return {
+        "items": items,
+        "total": total,
+        "skip": skip,
+        "page": page,
+        "limit": limit,
+    }
 
 
 @router.get("/image/{media_id}")
@@ -106,6 +113,7 @@ async def get_image_detail(media_id: int, db: Session = Depends(get_db)):
     response = {
         "id": media.id,
         "filename": media.filename,
+        "minio_key": media.minio_key,
         "file_hash": media.file_hash,
         "status": media.status,
         "content_type": media.content_type,

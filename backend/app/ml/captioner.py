@@ -20,12 +20,12 @@ class ImageCaptioner:
 
     def __init__(self):
         self.manager = get_model_manager()
-        logger.info("ImageCaptioner initialized for model: microsoft/Florence-2-base")
+        logger.info("ImageCaptioner initialized for model: %s", settings.BLIP_MODEL)
 
     def _load_model(self):
         """Loader function for ModelManager"""
-        model_id = "microsoft/Florence-2-base"
-        logger.info(f"Loading Florence-2 model: {model_id}")
+        model_id = settings.BLIP_MODEL
+        logger.info("Loading Florence-2 model: %s", model_id)
 
         device = "cuda" if settings.USE_GPU and torch.cuda.is_available() else "cpu"
         torch_dtype = torch.float16 if device == "cuda" else torch.float32

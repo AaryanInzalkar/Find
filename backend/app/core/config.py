@@ -29,9 +29,9 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379"
 
     # ML Models
-    CLIP_MODEL: str = "ViT-B-32"
-    CLIP_PRETRAINED: str = "openai"
-    BLIP_MODEL: str = "Salesforce/blip-image-captioning-large"
+    CLIP_MODEL: str = "ViT-B-16-SigLIP"
+    CLIP_PRETRAINED: str = "webli"
+    BLIP_MODEL: str = "microsoft/Florence-2-base"
     YOLO_MODEL: str = "yolov10b.pt"
     USE_GPU: bool = False
 

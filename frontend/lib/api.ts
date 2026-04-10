@@ -40,6 +40,7 @@ export interface MediaItem {
 }
 
 export interface MediaDetail extends MediaItem {
+  minio_key: string;
   file_hash: string;
   content_type?: string;
   metadata?: {
@@ -77,6 +78,7 @@ export interface GalleryResponse {
   items: MediaItem[];
   total: number;
   page: number;
+  skip?: number;
   limit: number;
 }
 
@@ -114,6 +116,13 @@ export interface ClusterDetail {
     url?: string | null;
     caption?: string;
   }>;
+}
+
+export interface ClusteringJobResponse {
+  message: string;
+  job_id: string;
+  status: JobStatus["status"];
+  enqueued: boolean;
 }
 
 export interface SearchResult {
@@ -252,12 +261,7 @@ export const getClusterDetail = async (
   return response.data;
 };
 
-export const triggerClustering = async (): Promise<{
-  message: string;
-  job_id: string;
-}> => {
-  const response = await api.post<{ message: string; job_id: string }>(
-    "/api/cluster/run",
-  );
+export const triggerClustering = async (): Promise<ClusteringJobResponse> => {
+  const response = await api.post<ClusteringJobResponse>("/api/cluster/run");
   return response.data;
 };

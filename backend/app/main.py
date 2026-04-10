@@ -16,10 +16,12 @@ logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
 )
 
+
 # Filter out health check logs
 class HealthCheckFilter(logging.Filter):
     def filter(self, record):
         return record.getMessage().find("/health") == -1
+
 
 logging.getLogger("uvicorn.access").addFilter(HealthCheckFilter())
 
@@ -57,7 +59,12 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:3001"],
+    allow_origins=[
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
+        "http://localhost:3001",
+        "http://127.0.0.1:3001",
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
