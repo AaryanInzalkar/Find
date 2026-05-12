@@ -219,11 +219,7 @@ export default function UploadPage() {
         return;
       }
 
-      const fileList = Object.assign(acceptedFiles, {
-        item: (index: number) => acceptedFiles[index] || null,
-      }) as unknown as FileList;
-
-      uploadMutation.mutate(fileList);
+      uploadMutation.mutate(acceptedFiles);
     },
     [uploadMutation],
   );
