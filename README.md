@@ -132,6 +132,19 @@ cd backend
 uv run ruff check .
 uv run ruff format --check .
 ```
+## ML troubleshooting
+
+For debugging real caption generation, OCR extraction, embeddings, object detection, and semantic search quality issues, see:
+
+* [Real ML Troubleshooting Guide](docs/REAL_ML_TROUBLESHOOTING.md)
+
+The guide covers:
+
+* Full ML mode vs mock mode
+* Worker log inspection
+* Caption/OCR debugging
+* GPU and model-loading issues
+* Manual validation workflows for search quality
 
 ## Core flow
 
