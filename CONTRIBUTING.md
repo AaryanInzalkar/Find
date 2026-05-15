@@ -145,7 +145,7 @@ Useful labels:
 - `good first issue`: beginner-friendly tasks
 - `help wanted`: priority items where maintainer help is needed
 - `gssoc26`: scoped for GSSoC'26
-- `level 1`, `level 2`, `level 3`: expected complexity
+- `level:beginner`, `level:intermediate`, `level:advanced`: expected complexity
 
 ## Community standards
 
