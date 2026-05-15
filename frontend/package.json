@@ -37,5 +37,15 @@
     "tailwindcss-animate": "^1.0.7",
     "typescript": "^5.6.3",
     "vitest": "^4.1.6"
+    "typescript": "^5.6.3"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "sharp"
+    ],
+    "allowedDeprecatedVersions": {},
+    "allowBuild": [
+      "sharp"
+    ]
   }
 }
