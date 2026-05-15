@@ -67,16 +67,9 @@ pnpm install    # or npm install
 pnpm vitest run src/__tests__/reprocess.test.ts
 ```
 
-## Suggested commit & PR workflow
-
-1. Create a feature branch from `main`: `git checkout -b feature/reprocess-retry`.
-2. Add tests and docs together with the code changes so reviewers can run them locally.
-3. Push the branch and open a pull request against `main` describing the change and linking related issues.
-
 ## Notes
 
 - The backend tests were designed to be fast and not require a running worker or object storage instance. If you run full integration tests (manual run), you will need MinIO and an RQ worker configured.
 - The frontend tests cover the small UI/logic changes; integration/e2e tests are not included in this change.
 
----
-If you want, I can commit these docs and the code changes to a feature branch and push a PR for you.
+
