@@ -11,8 +11,8 @@
  *   pnpm vitest run src/__tests__/reprocess.test.ts   # run this file only
  */
 
-import axios from "axios";
 import type { AxiosInstance } from "axios";
+import axios from "axios";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------

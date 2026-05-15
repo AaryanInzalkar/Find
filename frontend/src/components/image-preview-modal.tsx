@@ -15,6 +15,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import {
   deleteImage,
   getImageDetail,
@@ -26,7 +27,6 @@ import {
 import { resolveMediaUrl } from "@/lib/media";
 import { formatBytes, formatDate } from "@/lib/utils";
 import { StatusIndicator } from "./status-indicator";
-import { toast } from "sonner";
 
 export type PreviewMedia = Pick<MediaItem, "id" | "filename"> &
   Partial<

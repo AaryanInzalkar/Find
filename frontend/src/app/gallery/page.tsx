@@ -16,6 +16,7 @@ import {
 import Image from "next/image";
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { toast } from "sonner";
 import { ImagePreviewModal } from "@/components/image-preview-modal";
 import { StatusIndicator } from "@/components/status-indicator";
 import {
@@ -27,7 +28,6 @@ import {
   toggleLike,
 } from "@/lib/api";
 import { resolveMediaUrl } from "@/lib/media";
-import { toast } from "sonner";
 
 export default function GalleryPage() {
   const [page, setPage] = useState(1);
