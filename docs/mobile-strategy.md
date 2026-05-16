@@ -67,6 +67,8 @@ Find is local-first, but the current product depends on PostgreSQL, Redis, MinIO
 
 **Choose PWA only as the first MVP path.**
 
+The PWA is a mobile companion to a user-owned Find desktop or server instance. It connects to the backend for search, index, and gallery operations — it does not run the Find stack (PostgreSQL, Redis, MinIO, ML models) on the phone. All heavy processing stays on the user's machine; the phone is a thin, capable client that relies on a reachable backend.
+
 Reasoning:
 
 1. It is the fastest realistic way to make Find mobile-friendly.
@@ -135,12 +137,12 @@ Minimum requirements:
 
 1. **Encrypted transport** — use HTTPS/TLS only; never send credentials or media over plain HTTP.
 2. **Authentication** — JWT-based auth with short-lived access tokens (15 min) and longer-lived refresh tokens (7 days). The existing FastAPI backend needs a new `/api/auth/*` module handling login, token refresh, and logout.
-3. **Pairing flow** — QR code encoding `{host, port, token}` scanned by the phone. The desktop/server generates this payload in-app; the phone stores it as the connection profile. Manual fallback (host + port + pairing code) for devices without a camera.
+3. **Pairing flow** — QR code encoding `{host, port, token}` scanned by the phone. The desktop/server generates this payload in-app. The pairing token is **single-use and short-lived** (expires in minutes); it is exchanged for session tokens during the first handshake and cannot be replayed. The phone stores the resulting connection profile. Manual fallback (host + port + pairing code) for devices without a camera.
 4. **Short-lived tokens** — issue access tokens that expire and can be revoked. Refresh tokens are rotated on each use to limit damage from leaks.
 5. **Origin and CORS restrictions** — only allow the specific mobile web origin(s) you expect.
 6. **Least-privilege API exposure** — expose only the Find API, not Redis, PostgreSQL, MinIO, or worker internals.
 7. **Rate limiting and request size limits** — protect upload and search endpoints from accidental abuse.
-8. **Device-safe storage** — store refresh tokens or pairing secrets in secure storage when a native shell is introduced.
+8. **Device-safe storage** — store refresh tokens in secure storage when a native shell is introduced. In the PWA, `localStorage` holds only the connection profile (host, port, and a short-lived session token) — never a long-lived secret or pairing token.
 9. **User-visible trust model** — show which backend the phone is connected to, so users know whether they are using a laptop, home server, or remote instance.
 
 ## 7. What this means for the roadmap
@@ -150,7 +152,7 @@ The mobile roadmap should be staged as follows:
 1. **Stage 1: PWA mobile web app**
    - Responsive UI — the existing frontend already has a gallery and search page; the first sub-task is adapting layouts with mobile-first CSS (stacked cards, bottom nav, touch-friendly hit targets). This reuses existing components and can ship independently of the pairing/auth work.
    - Installable app shell — use `@serwist/next` (actively maintained, Next.js 16 compatible) for service worker generation, precaching, and runtime caching. Configure a `manifest.json` with icons, theme color, and display mode.
-   - Backend pairing / connection flow — QR code scanner or manual entry for host + port + pairing token. Stores connection profile in `localStorage` (PWA) or secure storage (Capacitor).
+   - Backend pairing / connection flow — QR code scanner or manual entry for host + port + pairing token. The pairing token is single-use and exchanged for short-lived session tokens immediately; it is never stored. The connection profile (host, port, short-lived session token) is stored in `localStorage` (PWA) or secure storage (Capacitor).
    - IndexedDB upload queue — offline image selection staged locally, flushed on reconnect.
    - Core browse, search, upload, and gallery actions — same API consumption as the desktop UI, adapted for mobile gestures and viewport.
 
@@ -173,5 +175,4 @@ In short: prove the mobile experience with the web stack first, then earn the ri
 ## 9. Related
 
 - Discussion: issue #37
-- Desktop framework ADR: [`desktop-tauri-vs-electron-adr.md`](./desktop-tauri-vs-electron-adr.md)
 - Current architecture: [`../README.md`](../README.md)
