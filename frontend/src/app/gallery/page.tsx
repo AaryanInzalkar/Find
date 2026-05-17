@@ -56,7 +56,6 @@ const getStatusParamFromFilter = (filter: GalleryFilter): string | null => {
 };
 
 function GalleryPageContent() {
-  const [page, setPage] = useState(1);
   const [selectedMediaId, setSelectedMediaId] = useState<number | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<{
     id: number;
@@ -74,6 +73,13 @@ function GalleryPageContent() {
   const searchParams = useSearchParams();
   const filter = getFilterFromStatusParam(searchParams.get("status"));
   const likedOnly = searchParams.get("liked") === "true";
+  const filterStateKey = `${filter}:${likedOnly}`;
+  const [pagination, setPagination] = useState({
+    filterStateKey,
+    page: 1,
+  });
+  const page =
+    pagination.filterStateKey === filterStateKey ? pagination.page : 1;
   const galleryQueryKey = useMemo(
     () => ["gallery", page, filter, likedOnly] as const,
     [page, filter, likedOnly],
@@ -99,11 +105,6 @@ function GalleryPageContent() {
         : false;
     },
   });
-
- // biome-ignore lint/correctness/useExhaustiveDependencies:
-useEffect(() => {
-  setPage(1);
-}, [filter, likedOnly]);
 
   const updateGalleryParams = useCallback(
     (nextState: { filter?: GalleryFilter; likedOnly?: boolean }) => {
@@ -314,21 +315,33 @@ useEffect(() => {
 
   const handleFilterChange = useCallback(
     (value: GalleryFilter) => {
-      setPage(1);
       updateGalleryParams({ filter: value });
     },
     [updateGalleryParams],
   );
 
   const handleLikedOnlyChange = useCallback(() => {
-    setPage(1);
     updateGalleryParams({ likedOnly: !likedOnly });
   }, [likedOnly, updateGalleryParams]);
 
   const handleClearLikedOnly = useCallback(() => {
-    setPage(1);
     updateGalleryParams({ likedOnly: false });
   }, [updateGalleryParams]);
+
+  const updatePage = useCallback(
+    (updater: (currentPage: number) => number) => {
+      setPagination((current) => {
+        const currentPage =
+          current.filterStateKey === filterStateKey ? current.page : 1;
+
+        return {
+          filterStateKey,
+          page: updater(currentPage),
+        };
+      });
+    },
+    [filterStateKey],
+  );
 
   const handleToggleLike = useCallback(
     (mediaId: number) => {
@@ -578,7 +591,9 @@ useEffect(() => {
               <div className="mt-12 flex items-center justify-center gap-6">
                 <button
                   type="button"
-                  onClick={() => setPage((current) => Math.max(1, current - 1))}
+                  onClick={() =>
+                    updatePage((current) => Math.max(1, current - 1))
+                  }
                   disabled={page === 1}
                   className="icon-button disabled:cursor-not-allowed disabled:opacity-30"
                 >
@@ -589,7 +604,7 @@ useEffect(() => {
                 </span>
                 <button
                   type="button"
-                  onClick={() => setPage((current) => current + 1)}
+                  onClick={() => updatePage((current) => current + 1)}
                   disabled={page >= Math.ceil(data.total / limit)}
                   className="icon-button disabled:cursor-not-allowed disabled:opacity-30"
                 >
