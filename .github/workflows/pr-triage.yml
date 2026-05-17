@@ -5,6 +5,7 @@ on:
     types: [opened, edited, reopened, synchronize]
 
 permissions:
+  pull-requests: write
   issues: write
 
 jobs:
@@ -16,26 +17,22 @@ jobs:
           script: |
             const label = "needs linked issue";
             const body = context.payload.pull_request.body || "";
-            
-            // GitHub supports: fix/fixes/fixed, close/closes/closed, resolve/resolves/resolved
             const hasLink = /\b(?:fix|fixes|fixed|close|closes|closed|resolve|resolves|resolved)\b\s*:?\s*#\d+/i.test(body);
-            
+
             if (!hasLink) {
               await github.rest.issues.addLabels({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
+                ...context.repo,
                 issue_number: context.issue.number,
-                labels: [label]
+                labels: [label],
               });
             } else {
               try {
                 await github.rest.issues.removeLabel({
-                  owner: context.repo.owner,
-                  repo: context.repo.repo,
+                  ...context.repo,
                   issue_number: context.issue.number,
-                  name: label
+                  name: label,
                 });
-              } catch (error) {
-                if (error.status !== 404) throw error;
+              } catch (e) {
+                if (e.status !== 404) throw e;
               }
             }
