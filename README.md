@@ -166,6 +166,21 @@ uv run pytest tests/ -v
 5. Backend queues clustering once indexing succeeds.
 6. Frontend polls job status and updates gallery/search/cluster views.
 
+## Clustering prerequisites and expected behavior
+
+Clustering only works on indexed images with generated embeddings. Images must complete the indexing pipeline successfully before they become eligible for clustering.
+
+The current clustering pipeline requires at least `MIN_CLUSTER_SIZE` indexed images with embeddings before stable clusters can be formed. By default, the current minimum cluster size is `2`.
+
+A clustering run may still complete successfully without producing any clusters. In those cases, the worker may return messages such as:
+
+- `Not enough indexed images for clustering`
+- `No stable clusters found`
+
+`No stable clusters found` is a valid outcome and does not necessarily indicate a system failure. It can occur when the indexed dataset is too small or when images are not visually similar enough to form meaningful groups.
+
+Repeated clustering attempts without adding or reindexing images are unlikely to produce different results and may unnecessarily consume worker resources.
+
 ## Key endpoints
 
 - `POST /api/upload`
