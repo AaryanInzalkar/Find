@@ -68,15 +68,18 @@ def db():
         session.close()
 
 
-def make_media(db, *, status: str, created_at: datetime) -> FakeMedia:
+def make_media(
+    db, *, status: str, created_at: datetime, updated_at: datetime | None = None
+) -> FakeMedia:
     media = FakeMedia(
-        file_hash=f"{status}-{created_at.timestamp()}",
+        file_hash=f"{status}-{created_at.timestamp()}-{updated_at.timestamp() if updated_at else 'none'}",
         minio_key="images/ab/test.jpg",
         filename="test.jpg",
         content_type="image/jpeg",
         file_size=1024,
         status=status,
         created_at=created_at,
+        updated_at=updated_at,
         processed_at=created_at if status == "indexed" else None,
         error_message="existing failure" if status == "failed" else None,
     )
@@ -129,6 +132,27 @@ def test_fresh_pending_and_processing_media_stay_active(db):
     assert reconciled == 0
     assert pending.status == "pending"
     assert processing.status == "processing"
+
+
+@pytest.mark.parametrize("status", ["pending", "processing"])
+def test_old_media_with_recent_activity_stays_active(db, status):
+    old_created = datetime.now(timezone.utc) - timedelta(days=7)
+    recent_update = datetime.now(timezone.utc)
+
+    with patch.object(recovery_module, "Media", FakeMedia):
+        media = make_media(
+            db,
+            status=status,
+            created_at=old_created,
+            updated_at=recent_update,
+        )
+
+        reconciled = reconcile_abandoned_analysis_jobs(db)
+
+    db.refresh(media)
+    assert reconciled == 0
+    assert media.status == status
+    assert media.error_message is None
 
 
 def test_indexed_and_failed_media_are_unchanged(db):
