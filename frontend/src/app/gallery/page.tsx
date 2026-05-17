@@ -311,7 +311,16 @@ function GalleryPageContent() {
   const closeDetail = useCallback(() => {
     setSelectedMediaId(null);
     setQuerySelectedItem(null);
-  }, []);
+
+    const params = new URLSearchParams(searchParams.toString());
+
+    params.delete("media");
+
+    const queryString = params.toString();
+    const url = queryString ? `${pathname}?${queryString}` : pathname;
+
+    router.replace(url, { scroll: false });
+  }, [router, pathname, searchParams]);
 
   const filters = [
     { label: "All", value: "all" },
