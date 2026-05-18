@@ -8,7 +8,7 @@ import {
   Search as SearchIcon,
 } from "lucide-react";
 import Image from "next/image";
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ImagePreviewModal } from "@/components/image-preview-modal";
 import { StatusIndicator } from "@/components/status-indicator";
 import { searchImages } from "@/lib/api";
@@ -30,6 +30,20 @@ export default function SearchPage() {
     mutationFn: (searchQuery: string) =>
       searchImages({ query: searchQuery, limit: 24 }),
   });
+
+  useEffect(() => {
+    const activeQuery = searchMutation.data?.query;
+    if (!activeQuery) return;
+
+    const intervalId = setInterval(
+      () => {
+        searchMutation.mutate(activeQuery);
+      },
+      1000 * 60 * 50,
+    ); // 50 mins
+
+    return () => clearInterval(intervalId);
+  }, [searchMutation.data?.query, searchMutation]);
 
   const handleSearch = (event: React.FormEvent) => {
     event.preventDefault();

@@ -59,13 +59,16 @@ export default function ClustersPage() {
   const { data, isLoading, error, isFetching } = useQuery({
     queryKey: ["clusters"],
     queryFn: getClusters,
-    refetchInterval: clusterJobId ? 4000 : 10000,
+    refetchInterval: clusterJobId ? 4000 : 1000 * 60 * 50,
+    staleTime: 1000 * 60 * 45,
   });
 
   const selectedClusterQuery = useQuery({
     queryKey: ["cluster-detail", selectedClusterId],
     queryFn: () => getClusterDetail(selectedClusterId as number),
     enabled: selectedClusterId !== null,
+    staleTime: 1000 * 60 * 45,
+    refetchInterval: 1000 * 60 * 50,
   });
 
   const clusterJobQuery = useQuery({

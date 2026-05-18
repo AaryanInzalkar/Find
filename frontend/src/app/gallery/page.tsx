@@ -174,6 +174,7 @@ function GalleryPageContent() {
         liked: likedOnly ? true : undefined,
       }),
     placeholderData: (previous) => previous,
+    staleTime: 1000 * 60 * 45, // 45 minutes to refresh before 1hr MinIO expiry
     refetchInterval: (query) => {
       const gallery = query.state.data as GalleryResponse | undefined;
 
@@ -181,7 +182,7 @@ function GalleryPageContent() {
         (item) => item.status === "processing" || item.status === "pending",
       )
         ? 5000
-        : false;
+        : 1000 * 60 * 50; // 50 minutes fallback
     },
   });
 
