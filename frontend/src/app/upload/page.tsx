@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   ArrowRight,
   CheckCircle,
@@ -15,6 +15,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useDropzone } from "react-dropzone";
 import { toast } from "sonner";
 import {
+  extractErrorMessage,
   getJobStatus,
   type JobStatus,
   type UploadResponse,
@@ -90,6 +91,15 @@ function getStatusClasses(item: UploadListItem) {
 export default function UploadPage() {
   const [uploadedFiles, setUploadedFiles] = useState<UploadListItem[]>([]);
   const [mode, setMode] = useState<UploadMode>("single");
+  const queryClient = useQueryClient();
+
+  const parsedUploadLimit = Number(
+    process.env.NEXT_PUBLIC_MAX_UPLOAD_SIZE_MB ?? "50",
+  );
+  const maxUploadSizeMb =
+    Number.isFinite(parsedUploadLimit) && parsedUploadLimit > 0
+      ? Math.floor(parsedUploadLimit)
+      : 50;
 
   const parsedBulkLimit = Number(
     process.env.NEXT_PUBLIC_MAX_BULK_FILES ?? "200",
@@ -103,12 +113,13 @@ export default function UploadPage() {
     mutationFn: uploadImages,
     onSuccess: (data) => {
       setUploadedFiles((prev) => [...hydrateResults(data), ...prev]);
+      void queryClient.invalidateQueries({ queryKey: ["gallery"] });
       toast.success(
         `Queued ${data.total} file${data.total === 1 ? "" : "s"} for analysis`,
       );
     },
-    onError: () => {
-      toast.error("Upload failed");
+    onError: (error) => {
+      toast.error(extractErrorMessage(error, "Upload failed"));
     },
   });
 
@@ -116,17 +127,28 @@ export default function UploadPage() {
     mutationFn: uploadImagesBulk,
     onSuccess: (data) => {
       setUploadedFiles((prev) => [...hydrateResults(data), ...prev]);
+      void queryClient.invalidateQueries({ queryKey: ["gallery"] });
       const uploadedCount = data.results.filter(
         (item) => item.status === "uploaded",
       ).length;
+      const failedResults = data.results.filter(
+        (item) => item.status === "failed" && item.error,
+      );
       toast.success(
         `Archive accepted (${uploadedCount} new upload${
           uploadedCount === 1 ? "" : "s"
         })`,
       );
+      if (failedResults.length > 0) {
+        toast.error(
+          failedResults.length === 1
+            ? failedResults[0]?.error
+            : `${failedResults.length} files failed. ${failedResults[0]?.error}`,
+        );
+      }
     },
-    onError: () => {
-      toast.error("Bulk upload failed");
+    onError: (error) => {
+      toast.error(extractErrorMessage(error, "Bulk upload failed"));
     },
   });
 
@@ -174,6 +196,14 @@ export default function UploadPage() {
         return;
       }
 
+      if (
+        jobStatuses.some(
+          (job) => job?.status === "finished" || job?.status === "failed",
+        )
+      ) {
+        void queryClient.invalidateQueries({ queryKey: ["gallery"] });
+      }
+
       setUploadedFiles((current) =>
         current.map((item) => {
           if (!item.job_id) {
@@ -210,7 +240,7 @@ export default function UploadPage() {
       cancelled = true;
       window.clearInterval(intervalId);
     };
-  }, [activeJobs]);
+  }, [activeJobs, queryClient]);
 
   const onDrop = useCallback(
     (acceptedFiles: File[]) => {
@@ -255,7 +285,7 @@ export default function UploadPage() {
       "image/webp": [".webp"],
       "image/gif": [".gif"],
     },
-    maxSize: 50 * 1024 * 1024,
+    maxSize: maxUploadSizeMb * 1024 * 1024,
     multiple: true,
     disabled: mode !== "single" || isUploading,
   });
@@ -286,11 +316,11 @@ export default function UploadPage() {
 
   const helperText = useMemo(() => {
     if (mode === "single") {
-      return "JPEG, PNG, WebP, GIF. Max 50MB each";
+      return `JPEG, PNG, WebP, GIF. Max ${maxUploadSizeMb}MB each`;
     }
 
     return `ZIP archive up to ${maxBulkFiles} images`;
-  }, [mode, maxBulkFiles]);
+  }, [mode, maxUploadSizeMb, maxBulkFiles]);
 
   const stats = useMemo(
     () => ({
@@ -329,6 +359,7 @@ export default function UploadPage() {
           <div className="frost-panel flex rounded-full p-1">
             <button
               type="button"
+              aria-pressed={mode === "single"}
               onClick={() => setMode("single")}
               className={`rounded-full px-5 py-2 text-sm font-medium transition ${
                 mode === "single"
@@ -340,6 +371,7 @@ export default function UploadPage() {
             </button>
             <button
               type="button"
+              aria-pressed={mode === "bulk"}
               onClick={() => setMode("bulk")}
               className={`rounded-full px-5 py-2 text-sm font-medium transition ${
                 mode === "bulk"
@@ -464,9 +496,21 @@ export default function UploadPage() {
                       </p>
                     </div>
 
-                    <span className={getStatusClasses(result)}>
-                      {displayStatus}
-                    </span>
+                    <div className="flex items-center gap-3">
+                      <span className={getStatusClasses(result)}>
+                        {displayStatus}
+                      </span>
+
+                      {result.status === "duplicate" &&
+                        result.media_id != null && (
+                          <Link
+                            href={`/gallery?media=${result.media_id}`}
+                            className="text-xs text-[#3b9eff] hover:underline"
+                          >
+                            View existing
+                          </Link>
+                        )}
+                    </div>
                   </div>
                 );
               })}

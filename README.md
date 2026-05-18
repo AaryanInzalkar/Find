@@ -16,6 +16,8 @@ Find is a local-first AI image intelligence platform for uploading, indexing, se
 
 All image processing, vector generation, and search stay inside your local stack.
 
+See the mobile direction in [`docs/mobile-strategy.md`](./docs/mobile-strategy.md), the desktop framework tradeoff analysis in [`docs/desktop-tauri-vs-electron-adr.md`](./docs/desktop-tauri-vs-electron-adr.md), and the broader installable local-first roadmap in [`docs/installable-local-first-architecture-roadmap.md`](./docs/installable-local-first-architecture-roadmap.md).
+
 ## What it does
 
 - Upload individual images or ZIP archives
@@ -52,7 +54,7 @@ This project is open for **GSSoC'26** contributions.
 
 - New contributors should start with the [GSSoC'26 Contributor Guide](./GSSOC_CONTRIBUTOR_GUIDE.md).
 - Start with issues labeled [`good first issue`](https://github.com/Abhash-Chakraborty/Find/labels/good%20first%20issue)
-- For medium/advanced work, check [`level 2`](https://github.com/Abhash-Chakraborty/Find/labels/level%202) and [`level 3`](https://github.com/Abhash-Chakraborty/Find/labels/level%203)
+- For medium/advanced work, check [`level:intermediate`](https://github.com/Abhash-Chakraborty/Find/issues?q=state%3Aopen%20label%3A%22level%3Aintermediate%22) and [`level:advanced`](https://github.com/Abhash-Chakraborty/Find/issues?q=state%3Aopen%20label%3A%22level%3Aadvanced%22)
 - Look for priority queue items via [`help wanted`](https://github.com/Abhash-Chakraborty/Find/labels/help%20wanted)
 - Follow the contribution rules in [CONTRIBUTING.md](./CONTRIBUTING.md)
 
@@ -154,7 +156,21 @@ pnpm build
 cd backend
 uv run ruff check .
 uv run ruff format --check .
+uv run pytest tests/ -v
 ```
+## ML troubleshooting
+
+For debugging real caption generation, OCR extraction, embeddings, object detection, and semantic search quality issues, see:
+
+* [Real ML Troubleshooting Guide](docs/REAL_ML_TROUBLESHOOTING.md)
+
+The guide covers:
+
+* Full ML mode vs mock mode
+* Worker log inspection
+* Caption/OCR debugging
+* GPU and model-loading issues
+* Manual validation workflows for search quality
 
 ## Core flow
 
@@ -191,6 +207,29 @@ uv run ruff format --check .
 - Cached models are stored in the Docker volume mounted at `model_cache`.
 - Use `docker compose -f docker-compose.light.yml up --build` when you only need to test contributor changes without real ML inference.
 
+### Docker disk usage
+
+- The full GPU stack is intentionally large because it includes CUDA, PyTorch, OCR, and the real ML dependencies needed for local inference.
+- Uploaded images live in MinIO, while model downloads live in `model_cache`. Docker build cache is separate from both.
+- If repeated rebuilds make Docker grow too much, inspect usage with `docker system df -v`.
+- To safely reclaim old build cache while keeping recent layers for faster rebuilds:
+
+```bash
+docker builder prune -f --reserved-space 10GB
+```
+
+- Older installs may also contain a stale `uv` package cache inside the `model_cache` volume. If present, it is safe to remove while keeping downloaded model files:
+
+```bash
+docker compose exec api sh -lc "rm -rf /root/.cache/uv"
+```
+
+- Prefer the light stack for routine UI/API/docs work when you do not need real inference:
+
+```bash
+docker compose -f docker-compose.light.yml up --build
+```
+
 ## Contribution quick start
 
 1. Pick an issue and comment to get assigned.
@@ -198,6 +237,33 @@ uv run ruff format --check .
 3. Make changes with focused commits.
 4. Run quality checks from CONTRIBUTING.
 5. Open a PR using the project template and link the issue.
+
+## Contribution Workflow
+
+```text
+1. Find an issue          →  github.com/Abhash-Chakraborty/Find/issues
+        ↓
+2. Comment to get assigned
+        ↓
+3. Fork & create branch   →  git checkout -b feat/your-feature
+        ↓
+4. Make your changes
+        ↓
+5. Run quality checks
+   Frontend:  cd frontend && pnpm check && pnpm build
+   Backend:   cd backend && uv run ruff check . && uv run pytest tests/
+        ↓
+6. Commit & push          →  git push origin feat/your-feature
+        ↓
+7. Open PR & link issue   →  Closes #(issue number)
+        ↓
+8. Wait for review ✅
+```
+
+See [CONTRIBUTING.md](./CONTRIBUTING.md) for full details.
+Labels: [`good first issue`](https://github.com/Abhash-Chakraborty/Find/labels/good%20first%20issue) · [`level:intermediate`](https://github.com/Abhash-Chakraborty/Find/issues?q=state%3Aopen%20label%3A%22level%3Aintermediate%22) · [`help wanted`](https://github.com/Abhash-Chakraborty/Find/labels/help%20wanted)
+
+
 
 ## Contact and support
 
