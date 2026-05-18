@@ -32,21 +32,13 @@ See the mobile direction in [`docs/mobile-strategy.md`](./docs/mobile-strategy.m
 - **Backend:** FastAPI, SQLAlchemy, PostgreSQL + pgvector, Redis, RQ, MinIO
 - **ML pipeline:** YOLOv10, Florence-2, PaddleOCR, SigLIP (`open-clip`), HDBSCAN
 
+## Contibution Workflow
+
+![Contribution Workflow](docs/assets/contribution.png)
+
 ## Architecture
 
-```text
-Next.js frontend
-    |
-    v
-FastAPI API
-    |
-    +--> PostgreSQL + pgvector  (metadata, embeddings, clusters)
-    +--> MinIO                  (image object storage)
-    +--> Redis + RQ             (background analysis and clustering jobs)
-            |
-            v
-        ML worker
-```
+![Architecture](docs/assets/architecture.png)
 
 ## Screenshots
 
@@ -180,19 +172,20 @@ uv run ruff check .
 uv run ruff format --check .
 uv run pytest tests/ -v
 ```
+
 ## ML troubleshooting
 
 For debugging real caption generation, OCR extraction, embeddings, object detection, and semantic search quality issues, see:
 
-* [Real ML Troubleshooting Guide](docs/REAL_ML_TROUBLESHOOTING.md)
+- [Real ML Troubleshooting Guide](docs/REAL_ML_TROUBLESHOOTING.md)
 
 The guide covers:
 
-* Full ML mode vs mock mode
-* Worker log inspection
-* Caption/OCR debugging
-* GPU and model-loading issues
-* Manual validation workflows for search quality
+- Full ML mode vs mock mode
+- Worker log inspection
+- Caption/OCR debugging
+- GPU and model-loading issues
+- Manual validation workflows for search quality
 
 ## Core flow
 
