@@ -32,10 +32,6 @@ See the mobile direction in [`docs/mobile-strategy.md`](./docs/mobile-strategy.m
 - **Backend:** FastAPI, SQLAlchemy, PostgreSQL + pgvector, Redis, RQ, MinIO
 - **ML pipeline:** YOLOv10, Florence-2, PaddleOCR, SigLIP (`open-clip`), HDBSCAN
 
-## Contibution Workflow
-
-![Contribution Workflow](docs/assets/contribution.png)
-
 ## Architecture
 
 ![Architecture](docs/assets/architecture.png)
@@ -255,25 +251,7 @@ docker compose -f docker-compose.light.yml up --build
 
 ## Contribution Workflow
 
-```text
-1. Find an issue          →  github.com/Abhash-Chakraborty/Find/issues
-        ↓
-2. Comment to get assigned
-        ↓
-3. Fork & create branch   →  git checkout -b feat/your-feature
-        ↓
-4. Make your changes
-        ↓
-5. Run quality checks
-   Frontend:  cd frontend && pnpm check && pnpm build
-   Backend:   cd backend && uv run ruff check . && uv run pytest tests/
-        ↓
-6. Commit & push          →  git push origin feat/your-feature
-        ↓
-7. Open PR & link issue   →  Closes #(issue number)
-        ↓
-8. Wait for review ✅
-```
+![Contribution Workflow](docs/assets/contribution.png)
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for full details.
 Labels: [`good first issue`](https://github.com/Abhash-Chakraborty/Find/labels/good%20first%20issue) · [`level:intermediate`](https://github.com/Abhash-Chakraborty/Find/issues?q=state%3Aopen%20label%3A%22level%3Aintermediate%22) · [`help wanted`](https://github.com/Abhash-Chakraborty/Find/labels/help%20wanted)
