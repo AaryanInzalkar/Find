@@ -165,7 +165,7 @@ The proposed architecture mitigates these risks through:
 
 - Keep the admin UI simple: approve/deny list, generate invites, list active sessions, list users, and viewing deletion requests.
 - Provide a lightweight CLI or UI to export the user list and audit logs.
-- Provide config flags for ``MAX_INVITE_TTL``, `AUTO_APPROVE_INVITES`, and `ALLOW_PUBLIC_ACCESS`.
+- Provide config flags for `MAX_INVITE_TTL`, `AUTO_APPROVE_INVITES`, and `ALLOW_PUBLIC_ACCESS`.
 
 ## Edge cases & optional features
 
