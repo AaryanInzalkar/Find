@@ -228,6 +228,35 @@ Repeated clustering attempts without adding or reindexing images are unlikely to
 
 ## Troubleshooting
 
+### Images stuck in processing
+
+When an image is marked as `processing`, the upload has been accepted and queued for background analysis by the worker. The worker reads the file from MinIO, extracts metadata, generates embeddings, updates the database row, and then queues clustering.
+
+If an image looks stuck:
+
+- Confirm the stack is running:
+
+```bash
+docker compose ps
+```
+
+- Inspect the worker logs first:
+
+```bash
+docker compose logs --tail=200 worker
+```
+
+- Check the API logs for upload, storage, or queue errors:
+
+```bash
+docker compose logs --tail=200 api
+```
+
+- Confirm Redis and MinIO are healthy in `docker compose ps`.
+- Do not retry or manually reprocess while the image is still `processing`.
+- Retry/reprocess only after the item has moved to `failed`.
+- `WORKER_TIMEOUT` controls the analysis job timeout. After the recovery flow marks an abandoned item as `failed`, the existing retry/reprocess action can be used.
+
 ### Slow first run
 
 - Model downloads happen on the first startup of the full stack.
