@@ -14,9 +14,9 @@ Find needs to run on desktop without Docker, PostgreSQL, Redis, or MinIO knowled
 
 | Component | Current (Docker) | Desktop MVP | Why |
 |-----------|------------------|-------------|-----|
-| Database | PostgreSQL + pgvector | **SQLite + vector extension** | Single file, no separate process, sufficient for desktop |
+| Database | PostgreSQL + pgvector | **SQLite + vector extension candidate** | Single file, no separate process, subject to `sqlite-vec` proof of concept |
 | Object Storage | MinIO (S3-compatible) | **Local filesystem** | Transparent, simple, users can browse in file manager |
-| Job Queue | Redis + RQ | **SQLite-backed or in-process queue** | Eliminates another container, simple persistence |
+| Job Queue | Redis + RQ | **SQLite-backed queue** | Eliminates another container while preserving job state |
 | Supervisor | docker compose | **Tauri Rust shell** | OS-native, deterministic process control, better UX |
 | Configuration | .env + docker-compose | **~/.find/config.json** | Standard desktop app, no need for users to learn env vars |
 
@@ -26,7 +26,7 @@ Find needs to run on desktop without Docker, PostgreSQL, Redis, or MinIO knowled
 
 ### ✅ Database: SQLite + Vector Extension
 - **Single-file database:** No installation, init scripts, or user/role setup needed
-- **Vector search:** Use emerging SQLite extensions like `sqlite-vec` or `sqlite-vss`
+- **Vector search:** Prototype `sqlite-vec`; keep PostgreSQL + pgvector as fallback if feature parity or performance is not acceptable
 - **Schema compatibility:** Existing SQLAlchemy ORM needs light wrapper for vector queries
 - **Future proof:** Can migrate to PostgreSQL later if needed
 
@@ -36,12 +36,11 @@ Find needs to run on desktop without Docker, PostgreSQL, Redis, or MinIO knowled
 - **User transparent:** Users can see/backup images directly in file manager
 - **Garbage collection:** Background cleanup job removes orphaned files
 
-### ✅ Job Queue: SQLite or In-Process
+### ✅ Job Queue: SQLite-backed
 - **Persistence:** Job state stored in SQLite, survives restart
-- **Alternatives:** 
-  - `fakeredis` (in-memory, good for MVP)
-  - Custom SQLite job table (more control)
-  - `apscheduler` (already used elsewhere)
+- **Approach:**
+  - Custom SQLite job table for durable queued/running/completed/failed states
+  - In-memory queues only for tests or throwaway development, not the desktop MVP
 - **Worker mode:** Can run in-process thread or separate Python process
 
 ### ✅ Process Lifecycle: Tauri Shell
@@ -60,7 +59,7 @@ Find needs to run on desktop without Docker, PostgreSQL, Redis, or MinIO knowled
 
 ## Data Directory Layout
 
-```
+```text
 ~/.find/
 ├── app.db              # SQLite database (metadata, embeddings, jobs)
 ├── objects/            # Image storage organized by date/hash
@@ -74,7 +73,7 @@ Find needs to run on desktop without Docker, PostgreSQL, Redis, or MinIO knowled
 
 ## Startup Flow
 
-```
+```text
 User clicks Find app
   ↓
 Tauri shell validates data dir (~/.find)
@@ -83,7 +82,7 @@ SQLite DB initialized (schema migration if first run)
   ↓
 Worker thread/process starts (connects to job queue)
   ↓
-FastAPI server starts on 127.0.0.1:8000
+FastAPI server starts on 127.0.0.1, preferring port 8000
   ↓
 Wait for /health probe (30s timeout)
   ↓
@@ -98,7 +97,7 @@ Gallery loads, app is interactive
 
 ## Shutdown Flow
 
-```
+```text
 User quits app
   ↓
 Tauri shell marks worker as "stopping"
@@ -144,7 +143,7 @@ App exits cleanly
 | Cross-platform process management | Windows/Linux/macOS inconsistency | Test all platforms, use cross-platform Rust libs |
 | DB corruption if deleted while running | Data loss or crash | Validate DB at health check, recover/restart |
 | Logs fill partition | Silent failure | Daily rotation, 7-day retention, manual cleanup option |
-| SQLite size ceiling | Future growth bottleneck | Document path to PostgreSQL, build converter in phase 2 |
+| SQLite vector performance | Future growth bottleneck | Benchmark `sqlite-vec`, document path back to PostgreSQL, build converter in phase 2 |
 
 ---
 
@@ -172,7 +171,7 @@ The ADR is accepted when maintainers confirm:
 
 2. **Parallel Work:** Tauri shell architecture spike
 
-3. **PoC Target:** End of Q2 2026 (June)
+3. **PoC Target:** After ADR acceptance and implementation epics are created
 
 4. **Beta Release:** With opt-in user feedback
 
@@ -189,8 +188,8 @@ The ADR is accepted when maintainers confirm:
 | `USE_GPU` | `true` (auto-detect) |
 | `ML_MODE` | `full` |
 | `LOG_LEVEL` | `info` |
-| `API_PORT` | `8000` |
-| `API_BIND` | `127.0.0.1` (localhost only) |
+| `API_PORT` | `8000` preferred, fallback to a free localhost port |
+| `API_BIND` | `127.0.0.1` only |
 
 Users can override via `~/.find/config.json` for advanced use.
 
@@ -198,7 +197,7 @@ Users can override via `~/.find/config.json` for advanced use.
 
 ## Files & Documentation
 
-- **Full ADR:** [desktop-runtime-design-adr.md](./desktop-runtime-design-adr.md) (this document)
+- **Full ADR:** [desktop-runtime-design-adr.md](./desktop-runtime-design-adr.md) (full design document)
 - **Related ADRs:**
   - [desktop-tauri-vs-electron-adr.md](./desktop-tauri-vs-electron-adr.md) - Framework choice
   - [installable-local-first-architecture-roadmap.md](./installable-local-first-architecture-roadmap.md) - Broader roadmap

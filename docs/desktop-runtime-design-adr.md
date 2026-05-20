@@ -3,7 +3,7 @@
 - **Status:** Proposed (design phase)
 - **Date:** 2026-05-18
 - **Owner:** Find maintainers
-- **Related:** Issue #41, Roadmap [installable-local-first-architecture-roadmap.md](./installable-local-first-architecture-roadmap.md), Framework choice [desktop-tauri-vs-electron-adr.md](./desktop-tauri-vs-electron-adr.md)
+- **Related:** Issue #43, Roadmap [installable-local-first-architecture-roadmap.md](./installable-local-first-architecture-roadmap.md), Framework choice [desktop-tauri-vs-electron-adr.md](./desktop-tauri-vs-electron-adr.md)
 
 ---
 
@@ -47,8 +47,8 @@ The desktop runtime must remain **local-first** by default: images, embeddings, 
 **Research findings:**
 
 - **PostgreSQL full stack:** Requires system PostgreSQL installation, init scripts, user/role setup, and port management. Feasible but adds operational friction for a desktop user.
-- **pgvector extension:** Currently requires PostgreSQL. porting pgvector to SQLite is non-trivial (vector similarity search, exact matching, clustering integration). Use of third-party SQLite extensions exists but lacks Find's tight integration.
-- **SQLite + vector extension (recent 2024+ development):** Emerging projects like `sqlite-vec` and `sqlite-vss` offer native vector similarity search without external processes. However, compatibility with ORM (`SQLAlchemy`) and exact feature parity (indexed HNSW, clustering support) require validation.
+- **pgvector extension:** Currently requires PostgreSQL. Porting pgvector behavior to SQLite is non-trivial because Find depends on vector similarity search, exact matching baselines, and clustering integration.
+- **SQLite + vector extension (recent 2024+ development):** Emerging projects like `sqlite-vec` can provide local vector search without an external database process. `sqlite-vss` is older and less suitable as a default because it is no longer the main active path from the same ecosystem. Compatibility with SQLAlchemy, vector dimensions, filtering, and Find's current search/clustering behavior must be validated with a proof of concept.
 - **Hybrid approach:** Use SQLite for MVP to eliminate PostgreSQL dependency. Allow opt-in PostgreSQL for advanced deployments and high-volume scenarios later.
 
 **Decision: Use SQLite with vector extension for desktop MVP**
@@ -61,7 +61,7 @@ The desktop runtime must remain **local-first** by default: images, embeddings, 
   - Reduces installer complexity and first-run friction
 
 - **Technical approach:**
-  - Integrate `sqlite-vec` or `sqlite-vss` via Python bindings
+  - Prototype `sqlite-vec` first via Python bindings, keeping PostgreSQL + pgvector as the fallback if feature parity or performance is not acceptable
   - Wrap vector similarity queries in SQLAlchemy layer (via custom SQL functions)
   - Store metadata, embeddings, clusters, and job state in single `.db` file under user data directory
   - Define schema migration if/when PostgreSQL support is added
@@ -96,14 +96,14 @@ The desktop runtime must remain **local-first** by default: images, embeddings, 
   - Supports hard links or copies for deduplication without added complexity
 
 - **Technical approach:**
-  - Create `StorageBackend` abstraction already in Find (check `core/storage.py`)
+  - Introduce or extend the storage abstraction around `backend/src/find_api/core/storage.py`
   - Implement `LocalFileSystemStorageBackend` using `pathlib` and atomic operations
   - Organize images by date or hash: `~/.find/objects/{year}/{month}/{hash}.jpg`
   - Implement cleanup and garbage collection via background job
   - Use file-based locking for concurrent upload/download
 
 - **Acceptance criteria for later implementation:**
-  - Same S3-compatible interface in Python layer (get_object, put_object, delete_object)
+  - Same logical storage interface in Python layer (get, put, delete, signed/local URL)
   - Concurrent uploads do not cause data loss or corruption
   - Images are retrievable via API and gallery UI without latency regression
   - Backup/export can copy the entire object directory without database dump
@@ -117,7 +117,7 @@ The desktop runtime must remain **local-first** by default: images, embeddings, 
 **Research findings:**
 
 - **Redis + RQ:** In-memory job queue with background worker. Requires Redis process, health check, and connection pooling. Effective for multi-machine deployments but adds overhead for single-user desktop.
-- **SQLite-backed queue:** Projects like `apscheduler` or custom queues built on SQLite can persist jobs and worker state without a separate Redis instance. Trade-off: no strict ordering or real-time pub/sub, but acceptable for background ML tasks.
+- **SQLite-backed queue:** A custom queue table can persist jobs and worker state without a separate Redis instance. Trade-off: no strict ordering or real-time pub/sub, but acceptable for background ML tasks.
 - **In-process queue (async task pool):** Use Python's `asyncio` + thread pool for queuing and executing jobs within the same process. Simplest option but loses isolation between API and workers.
 - **Hybrid:** Keep RQ for complex retry/error handling logic, but run it in-process with an in-memory or SQLite backend instead of Redis.
 
@@ -130,12 +130,10 @@ The desktop runtime must remain **local-first** by default: images, embeddings, 
   - Existing RQ logic can be ported or simplified for single-machine use
 
 - **Technical approach:**
-  - Evaluate existing solutions:
-    - `python-rq` with `fakeredis` (in-memory, suitable for single-machine MVP)
-    - `apscheduler` for scheduled jobs
-    - Custom job table in SQLite (id, status, task_fn, args, retries, created_at, started_at, completed_at)
+  - Evaluate a custom job table in SQLite (id, status, task name, args, retries, created_at, started_at, completed_at)
+  - Treat in-memory queues only as test/dev helpers, not the desktop MVP, because they do not survive restart
   - Define job states: queued, running, completed, failed
-  - Implement a simple polling-based worker (or use `apscheduler.executors.background`)
+  - Implement a simple polling-based worker over the SQLite job table
   - Wrap enqueue/dequeue operations in transaction-safe SQLite calls
   - Worker can run in-process or in a separate Python thread/process
 
@@ -172,7 +170,7 @@ The desktop runtime must remain **local-first** by default: images, embeddings, 
   1. Resolve app data directory (OS-specific: `~/.find` on Linux/macOS, `%APPDATA%\Find` on Windows)
   2. Initialize SQLite database file if missing (run migrations)
   3. Start in-process or separate worker thread/process
-  4. Start FastAPI uvicorn server on `127.0.0.1:8000`
+  4. Start FastAPI uvicorn server on `127.0.0.1`, preferring port `8000` but falling back to a free localhost port if needed
   5. Wait for API `/health` endpoint to respond (exponential backoff, 30s timeout)
   6. Render frontend / initialize IPC bridge
   7. Periodically probe health status (every 10s)
@@ -318,7 +316,7 @@ Ensure users can:
 
 ### 7.1 Startup
 
-```
+```text
 [User launches Find app]
   ↓
 [Tauri shell initializes]
@@ -327,7 +325,7 @@ Ensure users can:
   │   └─ If missing, run schema migrations (CREATE TABLE, indices)
   ├─ Start worker (in-process or separate thread)
   │   └─ Connect to SQLite job queue
-  ├─ Start FastAPI server (uvicorn on 127.0.0.1:8000)
+  ├─ Start FastAPI server (uvicorn on 127.0.0.1, preferred port 8000)
   │   └─ Lifespan event: init_db(), init_storage(), warmup models
   ├─ Wait for /health probe (exponential backoff, 30s limit)
   ├─ Load frontend bundle (Next.js .next/ static files)
@@ -339,7 +337,7 @@ Ensure users can:
 
 ### 7.2 Runtime Monitoring
 
-```
+```text
 [Every 10 seconds, background thread in shell]
   ├─ HTTP GET /health → check API status
   ├─ Query job queue: pending count, last completion time
@@ -350,7 +348,7 @@ Ensure users can:
 
 ### 7.3 Shutdown
 
-```
+```text
 [User quits app or closes window]
   ↓
 [Tauri shell signals shutdown]
@@ -378,7 +376,7 @@ Ensure users can:
 
 ## 8. Data Directory Structure
 
-```
+```text
 ~/.find/                           # Root app data directory
 ├── app.db                          # SQLite database (metadata, embeddings, jobs, clusters)
 ├── objects/                        # Image object storage
@@ -418,8 +416,8 @@ Ensure users can:
 | `USE_GPU` | `true` (auto-detect) | Bool | Attempt to use NVIDIA/AMD GPU if available |
 | `ML_MODE` | `full` | Enum | `full` (real models) or `mock` (for testing) |
 | `LOG_LEVEL` | `info` | Enum | `debug`, `info`, `warning`, `error` |
-| `API_PORT` | `8000` | Int | Local API server port (fixed for desktop) |
-| `API_BIND` | `127.0.0.1` | IP | Localhost only (no remote access by default) |
+| `API_PORT` | `8000` preferred, fallback to free port | Int | Local API server port. The shell should record the actual bound port and pass it to the UI/runtime config. |
+| `API_BIND` | `127.0.0.1` | IP | Localhost only; do not bind to LAN by default. |
 
 Users can override via `~/.find/config.json` for advanced use.
 
@@ -432,8 +430,8 @@ Users can override via `~/.find/config.json` for advanced use.
 | **SQLite concurrency under heavy indexing** | Slow API response if worker is writing embeddings | Implement connection pooling; use WAL mode; batch inserts |
 | **Model cache bloats disk** | User runs out of space | Implement model cache cleanup; warn at 80% disk usage |
 | **Worker crash mid-job** | Incomplete embeddings or corrupted data | Implement job checkpointing; log job state; restart and resume |
-| **Large gallery (10k+ images) slugs search** | User expects sub-200ms search | Index embeddings; profile query performance; offer export to PostgreSQL later |
-| **Tauri process management on Windows/Linux differs** | Inconsistent startup/shutdown behavior | Test on all three platforms; use cross-platform Rust libraries (`std::process`, `nix`) |
+| **Large gallery (10k+ images) slows search** | User expects responsive search | Profile query performance; validate SQLite vector extension behavior; offer PostgreSQL export path later if needed |
+| **Tauri process management on Windows/Linux differs** | Inconsistent startup/shutdown behavior | Test on all three platforms; use `std::process` for cross-platform process management, and use Unix-only crates such as `nix` only behind platform-specific code |
 | **User deletes database while app is running** | Corruption or crash | Validate DB file existence at health check; recover or offer full restart |
 | **Logs accumulate and consume disk** | Silent failure if `/logs` fills partition | Implement daily rotation; keep 7-day retention by default; offer manual cleanup |
 | **Future PostgreSQL migration not planned** | Stranded users if SQLite hits limits | Document migration path now; build converter tools in phase 2 |
@@ -444,7 +442,7 @@ Users can override via `~/.find/config.json` for advanced use.
 
 ### Phase 1: Design Validation (Now)
 - [ ] Review this ADR with project maintainers and community
-- [ ] Validate SQLite vector extension compatibility (create PoC with `sqlite-vec` or `sqlite-vss`)
+- [ ] Validate SQLite vector extension compatibility (create PoC with `sqlite-vec`; keep PostgreSQL + pgvector fallback documented)
 - [ ] Confirm filesystem storage layout works with existing `find_api.core.storage` abstraction
 - [ ] Sketch SQLite-backed queue integration with RQ or custom queue
 
@@ -452,7 +450,7 @@ Users can override via `~/.find/config.json` for advanced use.
 - [ ] Build desktop-mode configuration layer (env vars, config.json)
 - [ ] Implement `LocalFileSystemStorageBackend`
 - [ ] Create SQLite schema and migration runner
-- [ ] Port job queue to SQLite or `fakeredis`
+- [ ] Port job queue to SQLite-backed persistence
 - [ ] Add Tauri shell skeleton with process supervision
 - [ ] Test startup/shutdown on Windows, macOS, Linux
 
@@ -495,7 +493,7 @@ This ADR is accepted when:
 
 2. **Parallel work:** Tauri shell architecture spike (see [desktop-tauri-vs-electron-adr.md](./desktop-tauri-vs-electron-adr.md))
 
-3. **PoC delivery:** Working prototype by end of Q2 2026 (target: June)
+3. **PoC delivery:** Working prototype target after ADR acceptance and implementation epics are created
 
 4. **Community testing:** Beta release with opt-in feedback form
 
@@ -518,7 +516,7 @@ This ADR is accepted when:
 - [Installable Local-First Architecture Roadmap](./installable-local-first-architecture-roadmap.md)
 - [Desktop Framework: Tauri vs Electron ADR](./desktop-tauri-vs-electron-adr.md)
 - [Mobile Strategy: PWA First](./mobile-strategy.md)
-- SQLite vector extensions: [`sqlite-vss`](https://github.com/asg017/sqlite-vss), [`sqlite-vec`](https://github.com/asg017/sqlite-vec)
+- SQLite vector extension candidate: [`sqlite-vec`](https://github.com/asg017/sqlite-vec)
 - Tauri documentation: https://tauri.app/
 - RQ (job queue): https://python-rq.org/
 - SQLAlchemy docs: https://docs.sqlalchemy.org/

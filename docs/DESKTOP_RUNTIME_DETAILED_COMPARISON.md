@@ -20,17 +20,17 @@
 | **Scaling** | Excellent for multi-user/distributed (replication, connection pooling) |
 | **Query Performance** | Sub-100ms for 1M+ embeddings with proper indexing |
 | **Backup** | `pg_dump`, WAL archiving, point-in-time recovery |
-| **Migration | Hard to extract/move; requires full dump |
+| **Migration** | Hard to extract/move; requires full dump |
 
 ### MVP: SQLite + Vector Extension
 
 | Aspect | Details |
 |--------|---------|
 | **Process** | Library (SQLite) + optional vector extension module |
-| **Installation** | Python package: `pip install sqlite3` + `pip install sqlite-vec` (or `sqlite-vss`) |
-| **Dependencies** | `sqlite3` (stdlib), `sqlite-vec` (~50 KB wasm module) |
+| **Installation** | Python stdlib `sqlite3` plus a vector extension package such as `sqlite-vec` |
+| **Dependencies** | `sqlite3` (Python stdlib), `sqlite-vec` native extension package |
 | **Storage** | Single `.db` file (typically <2 GB for 100k images) |
-| **Vector Support** | Emerging: `sqlite-vec` (HNSW), `sqlite-vss` (experimental) |
+| **Vector Support** | Emerging: `sqlite-vec` for local vector search; must be validated against Find's pgvector behavior |
 | **Scaling** | Single-user/machine only; WAL mode allows concurrent reads |
 | **Query Performance** | Sub-500ms for typical gallery (1-10k images); needs profiling for 100k+ |
 | **Backup** | Simple file copy; no special tools |
@@ -44,7 +44,7 @@
 | **Resource usage** | ~200 MB RAM baseline | <50 MB | SQLite ✓ |
 | **Portability** | Tied to OS/system | Portable (file) | SQLite ✓ |
 | **Concurrency** | Many clients | Single process | PostgreSQL (but not needed for desktop) |
-| **Max dataset size** | Unlimited | ~2–4 GB practical limit | PostgreSQL |
+| **Max dataset size** | Very high, production-proven | Large raw DB files are supported, but vector-query performance and write concurrency need profiling | PostgreSQL |
 | **Vector quality** | Best-in-class (pgvector) | Emerging (sqlite-vec) | PostgreSQL |
 | **Dev tooling** | psql, pgAdmin | sqlite3 CLI, DBeaver | Tie |
 | **Long-term maintenance** | Mature, stable | Newer, evolving | PostgreSQL |
@@ -116,7 +116,7 @@
 | **Failure recovery** | Can recover from RDB, but not guaranteed |
 | **Monitoring** | rq-dashboard, redis-cli |
 
-### Option A: In-Process Queue (apscheduler)
+### Option A: In-Process Queue
 
 | Aspect | Details |
 |--------|---------|
@@ -146,10 +146,10 @@
 
 ### Comparison: Key Trade-offs
 
-| Factor | Redis + RQ | apscheduler | SQLite Queue | Winner (for Desktop) |
+| Factor | Redis + RQ | In-process queue | SQLite Queue | Winner (for Desktop) |
 |--------|-----------|-----------|---|---|
 | **Setup** | Container + deps | Python package | Python package | SQLite ✓ |
-| **Resource** | ~100 MB RAM (Redis) | Minimal | Minimal | SQLite/apscheduler ✓ |
+| **Resource** | ~100 MB RAM (Redis) | Minimal | Minimal | SQLite/custom queue ✓ |
 | **Persistence** | Configurable | Optional | Guaranteed | SQLite ✓ |
 | **Worker scalability** | Distributed | Single process | Single process | Tie |
 | **Failure recovery** | Weak (RDB) | Weak (memory) | Strong (transactions) | SQLite ✓ |
@@ -246,7 +246,7 @@
 
 ## 6. Summary: Desktop MVP Stack
 
-```
+```text
 ┌─────────────────────────────────────────────────────────┐
 │  Find Desktop App (Tauri Shell)                         │
 │  ├─ Process Supervisor                                  │
@@ -263,7 +263,7 @@
   │ ~1 GB      │  │              │ │  Process)    │  │ Process  │
   │            │  │ ~/.find/     │ │              │  │          │
   │ app.db     │  │ objects/     │ │ Job Queue    │  │ Port     │
-  │            │  │              │ │ (SQLite)     │  │ 8000     │
+  │            │  │              │ │ (SQLite)     │  │ dynamic  │
   └────────────┘  └──────────────┘ └──────────────┘  └──────────┘
 ```
 
@@ -335,9 +335,9 @@
 
 ### Phase 2 (Prototype)
 
-- [ ] SQLite vector extension integration (PoC: `sqlite-vec` or `sqlite-vss`)
+- [ ] SQLite vector extension integration (PoC: `sqlite-vec`)
 - [ ] Filesystem storage backend implementation
-- [ ] SQLite job queue (custom or `fakeredis`)
+- [ ] SQLite-backed job queue (durable, simple, no extra process)
 - [ ] Tauri shell process supervision (startup, health, shutdown)
 - [ ] Configuration layer (defaults, overrides, validation)
 - [ ] Logging (file rotation, redaction, privacy)
@@ -362,12 +362,12 @@
 
 ## 9. Adoption Decision Tree
 
-```
+```text
 Start
   │
   ├─ Do you want to run Find on desktop?
   │   ├─ YES: Use desktop MVP (SQLite + filesystem + Tauri)
-  │   │       (Ready Q3 2026)
+  │   │       (after ADR acceptance and prototype work)
   │   │
   │   └─ NO: Stay on Docker web stack
   │          (Current option, stable)
@@ -384,18 +384,18 @@ Start
 
 ## 10. Questions for Stakeholders
 
-1. **Database:** Is SQLite + vector extension acceptable for MVP? Should we wait for `sqlite-vec` v1.0 stability, or use experimental version?
+1. **Database:** Is SQLite + `sqlite-vec` acceptable for MVP, or should desktop mode keep PostgreSQL + pgvector longer?
 2. **Storage:** Are users comfortable with transparent filesystem storage? Any concerns about direct file access?
-3. **Queue:** Should we use `fakeredis` (simple) or custom SQLite queue (more control)?
+3. **Queue:** Is a custom SQLite-backed queue acceptable, or should the desktop prototype keep Redis/RQ as a managed sidecar until the queue rewrite is proven?
 4. **Logging:** Is privacy-first logging approach acceptable (local files, no auto-reporting)?
-5. **Timeline:** Can we commit to phase 2 starting after ADR acceptance (targeting end Q2 2026)?
+5. **Timeline:** What prototype milestone should follow ADR acceptance, and which implementation epic should start first?
 
 ---
 
 ## Appendix: References & Further Reading
 
 - [sqlite-vec GitHub](https://github.com/asg017/sqlite-vec)
-- [sqlite-vss GitHub](https://github.com/asg017/sqlite-vss)
+- [sqlite-vss GitHub](https://github.com/asg017/sqlite-vss) - older extension useful as background reading, not the preferred MVP path
 - [Tauri Documentation](https://tauri.app/)
 - [Python RQ Documentation](https://python-rq.org/)
 - [SQLAlchemy ORM](https://docs.sqlalchemy.org/)
