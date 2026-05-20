@@ -87,7 +87,7 @@ def search_images(
         )
         SELECT * FROM ranked_results
         WHERE similarity > :threshold
-        ORDER BY similarity DESC
+        ORDER BY similarity DESC, id ASC
         LIMIT :limit OFFSET :skip
     """
     )

@@ -43,22 +43,33 @@ export default function SearchPage() {
   const { mutate } = searchMutation;
 
   useEffect(() => {
-    if (!activeQuery) return;
-
-    const intervalId = setInterval(() => {
-      mutate(activeQuery);
-    }, MINIO_URL_REFRESH_INTERVAL_MS);
-
-    return () => clearInterval(intervalId);
-  }, [activeQuery, mutate]);
-
-  useEffect(() => {
+    // Only update results if it's an initial search (not a refresh)
     if (searchMutation.data?.isInitial && searchMutation.data?.data) {
       setAllResults(searchMutation.data.data.results);
       setHasMore(searchMutation.data.data.has_more);
       setCurrentSkip(searchMutation.data.data.results.length);
     }
   }, [searchMutation.data]);
+
+  // Periodic refresh - update first page results without losing loaded pages
+  useEffect(() => {
+    if (!activeQuery) return;
+
+    const intervalId = setInterval(() => {
+      // On refresh, only update if we have results and only refresh first page
+      if (allResults.length > 0) {
+        // For refresh, we could refresh in place, but for simplicity
+        // we'll skip the refresh if user has loaded more pages
+        if (currentSkip <= LIMIT) {
+          mutate(activeQuery);
+        }
+      } else {
+        mutate(activeQuery);
+      }
+    }, MINIO_URL_REFRESH_INTERVAL_MS);
+
+    return () => clearInterval(intervalId);
+  }, [activeQuery, mutate, allResults.length, currentSkip]);
 
   const handleSearch = (event: React.FormEvent) => {
     event.preventDefault();
@@ -224,14 +235,14 @@ export default function SearchPage() {
           </div>
         )}
 
-        {searchMutation.data && searchMutation.data.results.length > 0 && (
+        {allResults.length > 0 && (
           <div className="page-enter">
             <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-[color:var(--silver)]">
                 {allResults.length} result
                 {allResults.length !== 1 ? "s" : ""} for{" "}
                 <span className="text-[color:var(--near-white)]">
-                  {searchMutation.data?.query}
+                  {activeQuery}
                 </span>
               </p>
             </div>
