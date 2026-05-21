@@ -58,6 +58,13 @@ export interface MediaDetail extends MediaItem {
       confidence: number;
       bbox: { x: number; y: number; width: number; height: number };
     }>;
+    stage_status?: Record<
+      string,
+      {
+        status: "pending" | "success" | "failed";
+        error: string | null;
+      }
+    >;
   };
   exif?: Record<string, string>;
   error?: string | null;

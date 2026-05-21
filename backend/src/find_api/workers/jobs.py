@@ -14,6 +14,7 @@ from find_api.core.queue import clear_clustering_job_state, enqueue_clustering_j
 from find_api.core.storage import get_file
 from find_api.models.media import Media
 from find_api.utils.exif import extract_exif_data
+from find_api.utils.errors import sanitize_error
 
 logger = logging.getLogger(__name__)
 FACE_CLUSTER_NAME_MATCH_THRESHOLD = 0.72
@@ -92,7 +93,20 @@ def analyze_image(media_id: int):
 
         set_stage(job, "generating embedding")
 
-        media.vector = generate_hybrid_embedding(image, metadata)
+        try:
+            media.vector = generate_hybrid_embedding(image, metadata)
+            if "stage_status" in metadata:
+                metadata["stage_status"]["embedding"] = {
+                    "status": "success",
+                    "error": None,
+                }
+        except Exception as e:
+            if "stage_status" in metadata:
+                metadata["stage_status"]["embedding"] = {
+                    "status": "failed",
+                    "error": sanitize_error(e),
+                }
+            raise
 
         set_stage(job, "indexing complete")
 
@@ -137,11 +151,13 @@ def analyze_image(media_id: int):
         db.rollback()
 
         set_stage(job, "failed")
-        set_error(job, str(e))
+        set_error(job, sanitize_error(e))
 
         if media:
             media.status = "failed"
-            media.error_message = str(e)
+            media.error_message = sanitize_error(e)
+            if "metadata" in locals() and metadata:
+                media.metadata_json = metadata
             db.commit()
 
         raise
