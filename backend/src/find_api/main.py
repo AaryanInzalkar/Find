@@ -20,6 +20,14 @@ from find_api.routers import (
     cluster,
     people,
     feedback,
+    cluster,
+    clusters,
+    config,
+    gallery,
+    people,
+    search,
+    status,
+    upload,
 )
 
 # Configure logging
@@ -94,6 +102,7 @@ app.include_router(search.router, prefix="/api", tags=["search"])
 app.include_router(clusters.router, prefix="/api", tags=["clusters"])
 app.include_router(cluster.router, prefix="/api", tags=["cluster-ops"])
 app.include_router(status.router, prefix="/api", tags=["status"])
+app.include_router(config.router, prefix="/api", tags=["config"])
 app.include_router(people.router, prefix="/api", tags=["people"])
 app.include_router(feedback.router, prefix="/api", tags=["feedback"])
 
