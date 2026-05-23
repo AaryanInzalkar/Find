@@ -17,10 +17,12 @@ import {
   ImagePreviewModal,
   type PreviewMedia,
 } from "@/components/image-preview-modal";
+import { FeedbackActions } from "@/components/person-feedback-actions";
 import {
   getPeople,
   getPersonImages,
   type PersonItem,
+  submitPersonFeedbackWrongPerson,
   triggerFaceClustering,
   updatePersonName,
 } from "@/lib/api";
@@ -212,6 +214,33 @@ export default function PeoplePage() {
     },
   });
 
+  const wrongPersonMutation = useMutation({
+    mutationFn: ({
+      personId,
+      faceIds,
+    }: {
+      personId: number;
+      faceIds: number[];
+    }) =>
+      submitPersonFeedbackWrongPerson(
+        personId,
+        faceIds,
+        "This photo is grouped under the wrong person.",
+      ),
+    onSuccess: () => {
+      toast.success("Wrong-person feedback saved");
+      queryClient.invalidateQueries({ queryKey: ["people"] });
+      if (selectedPersonId !== null) {
+        queryClient.invalidateQueries({
+          queryKey: ["person-images", selectedPersonId],
+        });
+      }
+    },
+    onError: () => {
+      toast.error("Could not save wrong-person feedback");
+    },
+  });
+
   return (
     <div className="page-shell bg-[hsl(var(--background))] text-[hsl(var(--foreground))]">
       <div className="container-shell py-10 md:py-14">
@@ -358,6 +387,20 @@ export default function PeoplePage() {
                 {selectedPersonQuery.data?.person_name?.trim() ||
                   "Unknown person"}
               </h2>
+              {selectedPersonQuery.data && (
+                <div className="mt-4 flex gap-3">
+                  <FeedbackActions
+                    personId={selectedPersonId}
+                    personName={selectedPersonQuery.data?.person_name}
+                    images={selectedPersonQuery.data?.images || []}
+                    onFeedbackApplied={() => {
+                      queryClient.invalidateQueries({
+                        queryKey: ["person-images", selectedPersonId],
+                      });
+                    }}
+                  />
+                </div>
+              )}
             </div>
 
             <div className="max-h-[calc(90dvh-76px)] overflow-y-auto bg-[hsl(var(--background))] p-6">
@@ -375,37 +418,66 @@ export default function PeoplePage() {
 
               {selectedPersonQuery.data && (
                 <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 xl:grid-cols-4">
-                  {selectedPersonQuery.data.images.map((img) => (
-                    <button
-                      key={img.media_id}
-                      type="button"
-                      onClick={() =>
-                        setPreviewMedia({
-                          id: img.media_id,
-                          filename: img.filename,
-                        })
-                      }
-                      className="frost-panel card-hover group overflow-hidden rounded-3xl border border-[var(--frost)] text-left"
-                      aria-label={`Preview ${img.filename}`}
-                    >
-                      <div className="relative aspect-square overflow-hidden bg-[color:var(--surface-soft)]">
-                        <Image
-                          src={`${API_BASE_URL}/api/image/${img.media_id}/thumbnail`}
-                          alt="Photo"
-                          fill
-                          className="object-cover transition-transform duration-300 group-hover:scale-105"
-                          sizes="(max-width: 768px) 50vw, 25vw"
-                          unoptimized
-                        />
-                      </div>
-                      <div className="border-t border-[var(--frost-soft)] bg-[color:var(--surface-soft)] p-3">
-                        <p className="text-xs text-[color:var(--silver)]">
-                          {img.faces.length}{" "}
-                          {img.faces.length === 1 ? "face" : "faces"} detected
-                        </p>
-                      </div>
-                    </button>
-                  ))}
+                  {selectedPersonQuery.data.images.map((img) => {
+                    const faceIds = img.faces.map((face) => face.id);
+
+                    return (
+                      <article
+                        key={img.media_id}
+                        className="frost-panel card-hover group overflow-hidden rounded-3xl border border-[var(--frost)]"
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setPreviewMedia({
+                              id: img.media_id,
+                              filename: img.filename,
+                            })
+                          }
+                          className="block w-full text-left"
+                          aria-label={`Preview ${img.filename}`}
+                        >
+                          <div className="relative aspect-square overflow-hidden bg-[color:var(--surface-soft)]">
+                            <Image
+                              src={`${API_BASE_URL}/api/image/${img.media_id}/thumbnail`}
+                              alt={img.filename}
+                              fill
+                              className="object-cover transition-transform duration-300 group-hover:scale-105"
+                              sizes="(max-width: 768px) 50vw, 25vw"
+                              unoptimized
+                            />
+                          </div>
+                        </button>
+                        <div className="space-y-3 border-t border-[var(--frost-soft)] bg-[color:var(--surface-soft)] p-3">
+                          <p className="text-xs text-[color:var(--silver)]">
+                            {img.faces.length}{" "}
+                            {img.faces.length === 1 ? "face" : "faces"} detected
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (selectedPersonId === null) {
+                                return;
+                              }
+                              wrongPersonMutation.mutate({
+                                personId: selectedPersonId,
+                                faceIds,
+                              });
+                            }}
+                            disabled={
+                              faceIds.length === 0 ||
+                              wrongPersonMutation.isPending
+                            }
+                            className="frost-button w-full justify-center px-3 py-2 text-xs font-medium disabled:cursor-not-allowed disabled:opacity-50"
+                          >
+                            {wrongPersonMutation.isPending
+                              ? "Saving..."
+                              : "Wrong person"}
+                          </button>
+                        </div>
+                      </article>
+                    );
+                  })}
                 </div>
               )}
             </div>
