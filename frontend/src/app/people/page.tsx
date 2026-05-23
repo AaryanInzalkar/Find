@@ -26,7 +26,6 @@ import {
   triggerFaceClustering,
   updatePersonName,
 } from "@/lib/api";
-import { resolveMediaUrl } from "@/lib/media";
 
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -84,8 +83,6 @@ function PersonCard({
       <div className="pointer-events-none relative z-10 grid aspect-square w-full grid-cols-2 gap-2 overflow-hidden rounded-2xl">
         {[0, 1, 2, 3].map((index) => {
           const mediaId = person.sample_media_ids[index];
-          const thumbnailUrl =
-            index === 0 ? resolveMediaUrl(person.thumbnail_url) : null;
           return (
             <div
               key={mediaId ? mediaId : `empty-${person.id}-${index}`}
@@ -93,9 +90,7 @@ function PersonCard({
             >
               {mediaId ? (
                 <Image
-                  src={
-                    thumbnailUrl ?? `${API_BASE_URL}/api/image/${mediaId}/thumbnail`
-                  }
+                  src={`${API_BASE_URL}/api/image/${mediaId}/thumbnail`}
                   alt="Person photo"
                   fill
                   className="border border-[var(--frost)] object-cover"
@@ -444,10 +439,7 @@ export default function PeoplePage() {
                         >
                           <div className="relative aspect-square overflow-hidden bg-[color:var(--surface-soft)]">
                             <Image
-                              src={
-                                resolveMediaUrl(img.thumbnail_url) ??
-                                `${API_BASE_URL}/api/image/${img.media_id}/thumbnail`
-                              }
+                              src={`${API_BASE_URL}/api/image/${img.media_id}/thumbnail`}
                               alt={img.filename}
                               fill
                               className="object-cover transition-transform duration-300 group-hover:scale-105"
