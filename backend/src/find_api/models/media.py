@@ -26,6 +26,11 @@ class Media(Base):
     id = Column(Integer, primary_key=True, index=True)
     file_hash = Column(String(64), unique=True, index=True, nullable=False)
     minio_key = Column(String(255), nullable=False)
+    thumbnail_key = Column(String(255), nullable=True)
+    thumbnail_content_type = Column(String(100), nullable=True)
+    thumbnail_size = Column(Integer, nullable=True)
+    thumbnail_width = Column(Integer, nullable=True)
+    thumbnail_height = Column(Integer, nullable=True)
     filename = Column(String(255), nullable=False)
     content_type = Column(String(100))
     file_size = Column(Integer)
@@ -36,6 +41,7 @@ class Media(Base):
     # Status tracking
     status = Column(String(50), default="pending", index=True)
     # Status values: pending, processing, indexed, failed
+    analysis_job_id = Column(String(64), nullable=True, index=True)
 
     error_message = Column(Text, nullable=True)
 

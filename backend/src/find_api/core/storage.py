@@ -10,8 +10,14 @@ from minio.error import S3Error
 from find_api.core.config import settings
 import logging
 from io import BytesIO
+from PIL import Image, ImageOps
 
 logger = logging.getLogger(__name__)
+
+THUMBNAIL_MAX_SIZE = (256, 256)
+THUMBNAIL_CONTENT_TYPE = "image/webp"
+THUMBNAIL_EXTENSION = ".webp"
+THUMBNAIL_QUALITY = 78
 
 # Create MinIO client
 minio_client = Minio(
@@ -20,6 +26,23 @@ minio_client = Minio(
     secret_key=settings.MINIO_SECRET_KEY,
     secure=settings.MINIO_SECURE,
 )
+
+
+def _get_public_minio_client() -> Minio | None:
+    if not settings.MINIO_PUBLIC_ENDPOINT:
+        return None
+
+    parsed = urlparse(settings.MINIO_PUBLIC_ENDPOINT.rstrip("/"))
+    if not parsed.netloc:
+        return None
+
+    return Minio(
+        parsed.netloc,
+        access_key=settings.MINIO_ACCESS_KEY,
+        secret_key=settings.MINIO_SECRET_KEY,
+        secure=parsed.scheme == "https",
+        region="us-east-1",
+    )
 
 
 def init_storage():
@@ -56,6 +79,15 @@ def init_storage():
                 )
             except S3Error as exc:
                 logger.warning("Failed to apply public read policy: %s", exc)
+        else:
+            try:
+                minio_client.delete_bucket_policy(settings.MINIO_BUCKET)
+                logger.info(
+                    "Removed public read policy from MinIO bucket '%s'",
+                    settings.MINIO_BUCKET,
+                )
+            except S3Error as exc:
+                logger.warning("Failed to remove public read policy: %s", exc)
     except S3Error as e:
         logger.error(f"Failed to initialize MinIO storage: {e}")
         raise
@@ -88,6 +120,61 @@ def upload_file(
     except S3Error as e:
         logger.error(f"Failed to upload file to MinIO: {e}")
         raise
+
+
+def generate_thumbnail(file_data: bytes) -> tuple[bytes, int, int]:
+    """
+    Generate a small WEBP thumbnail from image bytes.
+
+    The original bytes are never modified. Any caller should treat failures as
+    non-fatal so image ingestion and analysis can continue without thumbnails.
+    """
+    with Image.open(BytesIO(file_data)) as image:
+        image = ImageOps.exif_transpose(image)
+        if image.mode not in {"RGB", "RGBA"}:
+            image = image.convert("RGBA" if "A" in image.getbands() else "RGB")
+
+        image.thumbnail(THUMBNAIL_MAX_SIZE, Image.Resampling.LANCZOS)
+
+        output = BytesIO()
+        image.save(
+            output,
+            format="WEBP",
+            quality=THUMBNAIL_QUALITY,
+            method=4,
+        )
+        thumbnail_data = output.getvalue()
+
+    return thumbnail_data, image.width, image.height
+
+
+def upload_thumbnail(file_data: bytes, file_hash: str) -> dict | None:
+    """
+    Generate and upload a thumbnail for an image.
+
+    Returns thumbnail storage metadata, or None when thumbnail creation/upload
+    fails. Original image storage must not depend on this helper succeeding.
+    """
+    thumbnail_key = f"thumbnails/{file_hash[:2]}/{file_hash}{THUMBNAIL_EXTENSION}"
+
+    try:
+        thumbnail_data, width, height = generate_thumbnail(file_data)
+        upload_file(thumbnail_data, thumbnail_key, THUMBNAIL_CONTENT_TYPE)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "Failed to generate thumbnail for image hash %s: %s",
+            file_hash,
+            exc,
+        )
+        return None
+
+    return {
+        "thumbnail_key": thumbnail_key,
+        "thumbnail_content_type": THUMBNAIL_CONTENT_TYPE,
+        "thumbnail_size": len(thumbnail_data),
+        "thumbnail_width": width,
+        "thumbnail_height": height,
+    }
 
 
 def get_file(object_name: str) -> bytes:
@@ -144,7 +231,8 @@ def get_file_url(object_name: str, expires: int = 3600) -> str:
                 )
             )
 
-        return minio_client.presigned_get_object(
+        signing_client = _get_public_minio_client() or minio_client
+        return signing_client.presigned_get_object(
             settings.MINIO_BUCKET, object_name, expires=timedelta(seconds=expires)
         )
     except S3Error as e:
