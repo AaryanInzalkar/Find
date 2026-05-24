@@ -22,6 +22,7 @@ docker compose up --build
 ```
 
 Starts the full local stack. The default full-stack ML workflow is optimized for NVIDIA GPU support.
+
 Frontend:
 
 ```bash

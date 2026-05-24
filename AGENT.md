@@ -8,13 +8,13 @@ Related docs:
 - [CLAUDE.md](./CLAUDE.md)
 - [CONTRIBUTING.md](./CONTRIBUTING.md)
 - [README.md](./README.md)
-- [AGENTS.md](./AGENTS.md)
+- [AGENTS.md](./AGENTS.md) - repository-local instructions consumed by coding agents
 
 ## Start Here
 
 1. Read [README.md](./README.md) for product scope, architecture, and run modes.
 2. Read [CONTRIBUTING.md](./CONTRIBUTING.md) for branch, PR, and review process.
-3. Use [CODEX.md](./CODEX.md) or [CLAUDE.md](./CLAUDE.md) only as tool-specific overlays. They do not replace this file.
+3. Use [CODEX.md](./CODEX.md) or [CLAUDE.md](./CLAUDE.md) only as tool-specific overlays. They do not replace this file or the repo-local rules in [AGENTS.md](./AGENTS.md).
 
 ## Repo Context Expectations
 
