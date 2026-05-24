@@ -1,11 +1,11 @@
 // Tests for Gallery cards in light mode
 // Uses Vitest and React Testing Library
-import { render, screen, waitFor, fireEvent } from "@testing-library/react";
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import GalleryPage from "../app/gallery/page";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import * as api from "@/lib/api";
 
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { render, screen, waitFor } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
+import * as api from "@/lib/api";
+import GalleryPage from "../app/gallery/page";
 
 // Mock next/navigation utilities with original exports preserved
 vi.mock("next/navigation", async (importOriginal) => {
@@ -36,7 +36,9 @@ const createQueryClient = () =>
 
 const renderWithClient = (ui: React.ReactElement) => {
   const client = createQueryClient();
-  return render(<QueryClientProvider client={client}>{ui}</QueryClientProvider>);
+  return render(
+    <QueryClientProvider client={client}>{ui}</QueryClientProvider>,
+  );
 };
 
 describe("Gallery card states (light mode)", () => {
@@ -46,15 +48,15 @@ describe("Gallery card states (light mode)", () => {
 
   it("renders loading spinner while data is fetching", async () => {
     // Mock getGallery to return a promise that never resolves immediately
-    (api.getGallery as any).mockImplementation(() => new Promise(() => {}));
+    vi.mocked(api.getGallery).mockImplementation(() => new Promise(() => {}));
     renderWithClient(<GalleryPage />);
     // The loading spinner is an SVG with class containing 'loader-circle'
-    const loader = document.querySelector('.lucide-loader-circle');
+    const loader = document.querySelector(".lucide-loader-circle");
     expect(loader).toBeInTheDocument();
   });
 
   it("shows error message when query fails", async () => {
-    (api.getGallery as any).mockRejectedValue(new Error("Network error"));
+    vi.mocked(api.getGallery).mockRejectedValue(new Error("Network error"));
     renderWithClient(<GalleryPage />);
     await waitFor(() => {
       expect(screen.getByText(/Failed to load gallery/i)).toBeInTheDocument();
@@ -62,11 +64,13 @@ describe("Gallery card states (light mode)", () => {
   });
 
   it("displays empty state when no items are returned", async () => {
-    (api.getGallery as any).mockResolvedValue({ items: [], total: 0 });
+    vi.mocked(api.getGallery).mockResolvedValue({ items: [], total: 0 });
     renderWithClient(<GalleryPage />);
     await waitFor(() => {
       expect(screen.getByText(/No images found/i)).toBeInTheDocument();
-      expect(screen.getByRole("link", { name: /Upload your first images/i })).toBeInTheDocument();
+      expect(
+        screen.getByRole("link", { name: /Upload your first images/i }),
+      ).toBeInTheDocument();
     });
   });
 
@@ -101,7 +105,7 @@ describe("Gallery card states (light mode)", () => {
   ];
 
   it("renders cards with correct UI for normal, liked and failed states", async () => {
-    (api.getGallery as any).mockResolvedValue({ items: mockItems, total: 3 });
+    vi.mocked(api.getGallery).mockResolvedValue({ items: mockItems, total: 3 });
     renderWithClient(<GalleryPage />);
     // Wait for cards to appear
     await waitFor(() => {
