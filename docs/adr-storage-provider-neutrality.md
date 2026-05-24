@@ -90,7 +90,7 @@ The current code is S3-like, but it still embeds several MinIO-specific assumpti
 
 | Option | S3 compatibility | Local Docker DX | OS fit for contributors | License | Migration complexity | Local-first fit |
 | --- | --- | --- | --- | --- | --- | --- |
-| Keep MinIO + add abstraction | High today | Excellent in this repo already | Good via Docker Desktop on Windows/macOS/Linux | AGPLv3 | Low | Strong |
+| MinIO transitional runtime + abstraction | High today, but public upstream is archived/read-only | Excellent in this repo already | Good via Docker Desktop on Windows/macOS/Linux | AGPLv3 source remains available, but community maintenance/support is no longer a healthy default assumption | Low | Strong as a short transition, weak as the final default |
 | RustFS | Positioned as fully S3-compatible; docs recommend AWS SDKs and say MinIO SDKs work | Moderate; official Docker docs are more involved than MinIO and Linux-oriented | Best on Linux first; Docker can still help on Windows/macOS | Apache-2.0 | Low to moderate if abstraction exists | Strong |
 | Garage | S3-compatible, aimed at small self-hosted geo-distributed deployments | Moderate; promising but less obviously one-command for this repo's current shape | Cross-platform through containers, but the cited project materials emphasize self-hosted cluster scenarios | AGPLv3 | Moderate | Strong |
 | SeaweedFS | S3-compatible gateway/object store | Good; official quick start includes one command and Docker examples | Strongest cross-platform story in cited sources because official quick start includes `weed`/`weed.exe` and Docker | Apache-2.0 | Moderate | Strong |
@@ -98,7 +98,7 @@ The current code is S3-like, but it still embeds several MinIO-specific assumpti
 
 ### Detailed Notes
 
-#### 1. Continue with MinIO plus an abstraction layer
+#### 1. Keep MinIO only as a transitional runtime while adding an abstraction layer
 
 Pros:
 
@@ -108,13 +108,13 @@ Pros:
 
 Cons:
 
-- Leaves the local default tied to a repository that was archived on April 25, 2026.
+- Leaves the local default tied to a repository that was archived/read-only on April 25, 2026.
 - Keeps AGPLv3 in the default storage runtime.
 - Solves API coupling, but not the long-term maintenance concern around the default storage choice.
 
 Assessment:
 
-This is a good transition step, but a weak final state if the goal is to reduce strategic dependence on MinIO.
+This is a good transition step, but a weak final state if the goal is to reduce strategic dependence on MinIO. New work should not deepen MinIO-specific coupling; it should make replacement easier.
 
 #### 2. RustFS
 
@@ -129,7 +129,7 @@ Cons:
 
 - The Docker installation docs reviewed here are more Linux-shaped than Find's current MinIO setup.
 - Official Docker docs describe host config files and ownership requirements, which are heavier than Find's current one-service MinIO runtime.
-- Compared with MinIO, the repo has less evidence in this review of a very mature "drop in for every local dev workflow" experience.
+- Compared with MinIO, the repo has less evidence in this review of a very mature "drop-in for every local dev workflow" experience.
 
 Assessment:
 
@@ -193,7 +193,7 @@ This is the architectural move that should happen regardless of which S3-compati
 
 | Option | Docker/local developer experience | Windows/macOS/Linux notes |
 | --- | --- | --- |
-| MinIO | Best current fit for this repo because Compose already encodes the full workflow | Good with Docker Desktop across platforms |
+| MinIO | Best current fit for this repo because Compose already encodes the full workflow, but only as a transition while the archived upstream risk is handled | Good with Docker Desktop across platforms |
 | RustFS | Viable, but the reviewed Docker docs are more involved and Linux-oriented | Likely workable via Docker Desktop, but the official install story reviewed here is less contributor-friendly on Windows/macOS |
 | Garage | Viable, but current evidence points more toward self-hosted deployment than "frictionless local app dependency" | Likely container-friendly, but not the clearest cross-platform onboarding story in reviewed sources |
 | SeaweedFS | Strong; official quick start is simple and Docker-backed | Best explicit multi-OS story in the reviewed sources |
@@ -202,7 +202,7 @@ This is the architectural move that should happen regardless of which S3-compati
 
 | Option | Code changes in `storage.py` | Config changes | Compose changes | Overall |
 | --- | --- | --- | --- | --- |
-| MinIO + abstraction | Moderate internal refactor, minimal behavior change | Rename or alias `MINIO_*` to neutral keys | Low | Lowest-risk |
+| MinIO transitional runtime + abstraction | Moderate internal refactor, minimal behavior change | Rename or alias `MINIO_*` to neutral keys | Low | Lowest-risk transition, not the final target |
 | RustFS | Same abstraction work, plus runtime validation | Neutral keys recommended | Replace storage service and healthcheck | Low to moderate |
 | Garage | Same abstraction work, plus runtime validation | Neutral keys recommended | New service definition and likely different bootstrapping | Moderate |
 | SeaweedFS | Same abstraction work, plus runtime validation | Neutral keys recommended | New service definition and endpoint semantics | Moderate |
@@ -230,8 +230,8 @@ Right now Find hardcodes both. That makes any future provider evaluation more ex
 The most realistic sequence is:
 
 - first, remove MinIO-specific coupling from `storage.py` and `config.py`
-- then, make Compose storage-provider-specific only at the service layer
-- only after that, compare MinIO and RustFS in a small runtime validation pass
+- then, keep Compose storage-provider-specific at the service layer
+- after that, compare RustFS, SeaweedFS, and a short-lived MinIO transition in a small runtime validation pass
 
 That avoids a risky "rewrite and migrate at the same time" change.
 
@@ -300,6 +300,8 @@ Prefer neutral names such as:
 - optional `STORAGE_AUTO_CREATE_BUCKET=true`
 
 For compatibility, Find can temporarily support `MINIO_*` as aliases.
+
+Alias timeline: introduce `STORAGE_BACKEND`, `STORAGE_ENDPOINT`, `STORAGE_ACCESS_KEY`, `STORAGE_SECRET_KEY`, `STORAGE_BUCKET`, `STORAGE_SECURE`, `STORAGE_PUBLIC_ENDPOINT`, `STORAGE_PUBLIC_READ`, and `STORAGE_AUTO_CREATE_BUCKET` first, then support existing `MINIO_*` aliases for 2-3 releases or until RustFS validation completes, whichever comes first. Before removing the aliases, document a clear fallback: copy the existing `MINIO_*` values into the matching `STORAGE_*` keys and keep `STORAGE_BACKEND=s3`.
 
 ## Tradeoff Analysis For The Recommended Path
 

@@ -10,12 +10,18 @@ import {
   type PreviewMedia,
 } from "@/components/image-preview-modal";
 import {
+  extractErrorMessage,
   getClusterDetail,
   getClusters,
+  getGallery,
   getJobStatus,
   triggerClustering,
 } from "@/lib/api";
-import { resolveMediaUrl } from "@/lib/media";
+import {
+  MINIO_URL_REFRESH_INTERVAL_MS,
+  MINIO_URL_STALE_TIME_MS,
+  resolveMediaUrl,
+} from "@/lib/media";
 
 function formatJobStatus(status?: string) {
   switch (status) {
@@ -58,12 +64,15 @@ export default function ClustersPage() {
     queryKey: ["clusters"],
     queryFn: getClusters,
     refetchInterval: clusterJobId ? 4000 : 10000,
+    staleTime: MINIO_URL_STALE_TIME_MS,
   });
 
   const selectedClusterQuery = useQuery({
     queryKey: ["cluster-detail", selectedClusterId],
     queryFn: () => getClusterDetail(selectedClusterId as number),
     enabled: selectedClusterId !== null,
+    staleTime: MINIO_URL_STALE_TIME_MS,
+    refetchInterval: MINIO_URL_REFRESH_INTERVAL_MS,
   });
 
   const clusterJobQuery = useQuery({
@@ -74,6 +83,12 @@ export default function ClustersPage() {
       const status = query.state.data?.status;
       return status === "finished" || status === "failed" ? false : 2500;
     },
+  });
+
+  const indexedQuery = useQuery({
+    queryKey: ["indexed-stats"],
+    queryFn: () => getGallery({ status: "indexed", limit: 1 }),
+    refetchInterval: 10000,
   });
 
   useEffect(() => {
@@ -114,8 +129,8 @@ export default function ClustersPage() {
           : "Clustering is already queued or running",
       );
     },
-    onError: () => {
-      toast.error("Failed to start clustering");
+    onError: (error) => {
+      toast.error(extractErrorMessage(error, "Failed to start clustering"));
     },
   });
 
@@ -136,6 +151,15 @@ export default function ClustersPage() {
     activeJobStatus === "queued" || activeJobStatus === "started";
   const isClusterActionBusy =
     clusterMutation.isPending || clusterJobQuery.isFetching || isJobActive;
+  const minClusterSize = data?.min_cluster_size ?? 2;
+  const indexedImageCount = indexedQuery.data?.total ?? 0;
+  const hasEnoughIndexedImages =
+    !indexedQuery.isSuccess || indexedImageCount >= minClusterSize;
+  const isClusterButtonDisabled =
+    isClusterActionBusy || !hasEnoughIndexedImages;
+  const clusteringUnavailableMessage = !hasEnoughIndexedImages
+    ? `Need at least ${minClusterSize} indexed images with vectors before clustering. Found ${indexedImageCount}.`
+    : null;
   const filteredMembers =
     selectedClusterQuery.data?.members.filter((member) =>
       member.filename.toLowerCase().includes(filterText.toLowerCase()),
@@ -171,8 +195,9 @@ export default function ClustersPage() {
             <button
               type="button"
               onClick={() => clusterMutation.mutate()}
-              disabled={isClusterActionBusy}
+              disabled={isClusterButtonDisabled}
               className="white-pill px-5 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+              title={clusteringUnavailableMessage ?? undefined}
             >
               {isClusterActionBusy ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -221,13 +246,15 @@ export default function ClustersPage() {
               No clusters yet
             </p>
             <p className="mb-6 text-sm leading-6 text-[color:var(--silver)]">
-              Index a few related images, then run clustering.
+              {clusteringUnavailableMessage ??
+                "Index a few related images, then run clustering."}
             </p>
             <button
               type="button"
               onClick={() => clusterMutation.mutate()}
-              disabled={isClusterActionBusy}
+              disabled={isClusterButtonDisabled}
               className="white-pill px-5 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+              title={clusteringUnavailableMessage ?? undefined}
             >
               {isClusterActionBusy ? (
                 <Loader2 className="h-4 w-4 animate-spin" />
@@ -300,7 +327,12 @@ export default function ClustersPage() {
 
                   <div className="grid grid-cols-4 gap-2 sm:grid-cols-6">
                     {cluster.samples.map((sample) => {
-                      const imageSrc = resolveMediaUrl(sample.url);
+                      const imageSrc = resolveMediaUrl(
+                        sample.thumbnail_url ?? sample.url,
+                        null,
+                        sample.id,
+                        !sample.thumbnail_url,
+                      );
 
                       return (
                         <button
@@ -413,7 +445,12 @@ export default function ClustersPage() {
 
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
                     {filteredMembers.map((member) => {
-                      const imageSrc = resolveMediaUrl(member.url);
+                      const imageSrc = resolveMediaUrl(
+                        member.thumbnail_url ?? member.url,
+                        null,
+                        member.id,
+                        !member.thumbnail_url,
+                      );
 
                       return (
                         <button

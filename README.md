@@ -65,7 +65,8 @@ This project is open for **GSSoC'26** contributions.
 - New contributors should start with the [GSSoC'26 Contributor Guide](./GSSOC_CONTRIBUTOR_GUIDE.md).
 - For concise repo-aware contributor and coding-agent workflow guidance, start with [AGENT.md](./AGENT.md).
 - Start with issues labeled [`good first issue`](https://github.com/Abhash-Chakraborty/Find/labels/good%20first%20issue)
-- For medium/advanced work, check [`level:intermediate`](https://github.com/Abhash-Chakraborty/Find/issues?q=state%3Aopen%20label%3A%22level%3Aintermediate%22) and [`level:advanced`](https://github.com/Abhash-Chakraborty/Find/issues?q=state%3Aopen%20label%3A%22level%3Aadvanced%22)
+- Beginner-friendly work may also use [`level:beginner`](https://github.com/Abhash-Chakraborty/Find/issues?q=state%3Aopen%20label%3A%22level%3Abeginner%22)
+- For bigger work, check [`level:intermediate`](https://github.com/Abhash-Chakraborty/Find/issues?q=state%3Aopen%20label%3A%22level%3Aintermediate%22), [`level:advanced`](https://github.com/Abhash-Chakraborty/Find/issues?q=state%3Aopen%20label%3A%22level%3Aadvanced%22), and [`level:critical`](https://github.com/Abhash-Chakraborty/Find/issues?q=state%3Aopen%20label%3A%22level%3Acritical%22)
 - Look for priority queue items via [`help wanted`](https://github.com/Abhash-Chakraborty/Find/labels/help%20wanted)
 - Follow the contribution rules in [CONTRIBUTING.md](./CONTRIBUTING.md)
 
@@ -226,7 +227,47 @@ Repeated clustering attempts without adding or reindexing images are unlikely to
 
 `.env.example` reflects the current stack. Keep `EMBEDDING_DIM` aligned with the selected CLIP/SigLIP model and pgvector dimensions.
 
+### Worker and clustering variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `WORKER_TIMEOUT` | `600` | Seconds before RQ kills a stalled job. Raise this when processing large batches or running real ML inference; the default is sufficient for mock mode. |
+| `MIN_CLUSTER_SIZE` | `2` | Minimum number of images HDBSCAN needs to form a cluster. Lower values produce more, smaller clusters; higher values produce fewer, broader ones. Tune after indexing a representative sample. |
+| `MIN_SAMPLES` | `1` | Controls how conservative HDBSCAN is about noise. Higher values cause more images to be labelled unclustered (`-1`). Keep at `1` for small libraries. |
+| `CLUSTERING_BACKEND` | `auto` | Clustering algorithm to use. `hdbscan` is the default and works well for variable-density image sets. Switch only if you are experimenting with an alternative backend. |
+
+These only affect the worker and the `/api/cluster/run` path. Frontend and API behaviour is unchanged by them.
+
 ## Troubleshooting
+
+### Images stuck in processing
+
+When an image is marked as `processing`, the upload has been accepted and queued for background analysis by the worker. The worker reads the file from MinIO, extracts metadata, generates embeddings, updates the database row, and then queues clustering.
+
+If an image looks stuck:
+
+- Confirm the stack is running:
+
+```bash
+docker compose ps
+```
+
+- Inspect the worker logs first:
+
+```bash
+docker compose logs --tail=200 worker
+```
+
+- Check the API logs for upload, storage, or queue errors:
+
+```bash
+docker compose logs --tail=200 api
+```
+
+- Confirm Redis and MinIO are healthy in `docker compose ps`.
+- Do not retry or manually reprocess while the image is still `processing`.
+- Retry/reprocess only after the item has moved to `failed`.
+- `WORKER_TIMEOUT` controls the analysis job timeout. After the recovery flow marks an abandoned item as `failed`, the existing retry/reprocess action can be used.
 
 ### Slow first run
 
@@ -270,7 +311,7 @@ docker compose -f docker-compose.light.yml up --build
 ![Contribution Workflow](docs/assets/contribution.png)
 
 See [CONTRIBUTING.md](./CONTRIBUTING.md) for full details.
-Labels: [`good first issue`](https://github.com/Abhash-Chakraborty/Find/labels/good%20first%20issue) · [`level:intermediate`](https://github.com/Abhash-Chakraborty/Find/issues?q=state%3Aopen%20label%3A%22level%3Aintermediate%22) · [`help wanted`](https://github.com/Abhash-Chakraborty/Find/labels/help%20wanted)
+Labels: [`good first issue`](https://github.com/Abhash-Chakraborty/Find/labels/good%20first%20issue) · [`level:beginner`](https://github.com/Abhash-Chakraborty/Find/issues?q=state%3Aopen%20label%3A%22level%3Abeginner%22) · [`level:intermediate`](https://github.com/Abhash-Chakraborty/Find/issues?q=state%3Aopen%20label%3A%22level%3Aintermediate%22) · [`level:advanced`](https://github.com/Abhash-Chakraborty/Find/issues?q=state%3Aopen%20label%3A%22level%3Aadvanced%22) · [`level:critical`](https://github.com/Abhash-Chakraborty/Find/issues?q=state%3Aopen%20label%3A%22level%3Acritical%22) · [`help wanted`](https://github.com/Abhash-Chakraborty/Find/labels/help%20wanted)
 
 ## Contact and support
 
