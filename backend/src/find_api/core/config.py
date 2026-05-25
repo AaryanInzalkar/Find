@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     # API
     API_HOST: str = "0.0.0.0"
     API_PORT: int = 8000
+    # When set, DELETE /api/image/{id} requires matching X-API-Key header.
+    DELETE_API_KEY: Optional[str] = None
 
     # Database
     DATABASE_URL: str = "postgresql://find:find123@localhost:5432/find"

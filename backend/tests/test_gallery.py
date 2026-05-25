@@ -1,9 +1,11 @@
-"""Tests for GET /api/gallery — response shape and status/liked filtering."""
+"""Tests for gallery endpoints — list/detail/delete and related behavior."""
 
 import hashlib
 from datetime import datetime, timezone
 from unittest.mock import patch
 
+from find_api.core.config import settings
+from find_api.models.cluster import Cluster
 from find_api.models.media import Media
 
 
@@ -31,6 +33,21 @@ def _seed(db, *, filename, status, liked=False, metadata_json=None):
     db.commit()
     db.refresh(media)
     return media
+
+
+def _seed_cluster(db, *, member_ids: list[int]) -> Cluster:
+    cluster = Cluster(
+        cluster_type="general",
+        member_ids=member_ids,
+        member_count=len(member_ids),
+        label="Test cluster",
+        description="Cluster used in tests",
+        created_at=datetime.now(timezone.utc),
+    )
+    db.add(cluster)
+    db.commit()
+    db.refresh(cluster)
+    return cluster
 
 
 class TestGalleryResponseShape:
@@ -250,3 +267,81 @@ class TestGalleryFiltering:
         assert body["total"] == 5
         assert len(body["items"]) == 2
         assert body["skip"] == 2
+
+
+class TestDeleteImage:
+    """DELETE /api/image/{media_id}"""
+
+    def test_delete_success_removes_db_row_and_minio_objects(self, client, db):
+        media = _seed(db, filename="delete-me.jpg", status="indexed")
+
+        with patch("find_api.routers.gallery.delete_file") as mock_delete_file:
+            response = client.delete(f"/api/image/{media.id}")
+
+        assert response.status_code == 200
+        assert response.json() == {"message": "Image deleted", "id": media.id}
+        assert db.query(Media).filter(Media.id == media.id).first() is None
+        mock_delete_file.assert_any_call(media.minio_key)
+        mock_delete_file.assert_any_call(media.thumbnail_key)
+
+    def test_delete_not_found_returns_404(self, client):
+        response = client.delete("/api/image/99999")
+
+        assert response.status_code == 404
+        assert response.json()["detail"] == "Image not found"
+
+    def test_delete_updates_cluster_member_ids(self, client, db):
+        first = _seed(db, filename="cluster-a.jpg", status="indexed")
+        second = _seed(db, filename="cluster-b.jpg", status="indexed")
+        third = _seed(db, filename="cluster-c.jpg", status="indexed")
+        cluster = _seed_cluster(db, member_ids=[first.id, second.id, third.id])
+
+        response = client.delete(f"/api/image/{second.id}")
+
+        assert response.status_code == 200
+        db.refresh(cluster)
+        assert cluster.member_ids == [first.id, third.id]
+        assert cluster.member_count == 2
+        assert db.query(Media).filter(Media.id == second.id).first() is None
+
+    def test_delete_unauthorized_without_api_key_when_configured(
+        self, client, db, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "DELETE_API_KEY", "test-delete-key")
+        media = _seed(db, filename="protected.jpg", status="indexed")
+
+        response = client.delete(f"/api/image/{media.id}")
+
+        assert response.status_code == 401
+        assert response.json()["detail"] == "Unauthorized"
+        assert db.query(Media).filter(Media.id == media.id).first() is not None
+
+    def test_delete_forbidden_with_invalid_api_key_when_configured(
+        self, client, db, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "DELETE_API_KEY", "test-delete-key")
+        media = _seed(db, filename="protected-2.jpg", status="indexed")
+
+        response = client.delete(
+            f"/api/image/{media.id}",
+            headers={"X-API-Key": "wrong-key"},
+        )
+
+        assert response.status_code == 403
+        assert response.json()["detail"] == "Forbidden"
+        assert db.query(Media).filter(Media.id == media.id).first() is not None
+
+    def test_delete_succeeds_with_valid_api_key_when_configured(
+        self, client, db, monkeypatch
+    ):
+        monkeypatch.setattr(settings, "DELETE_API_KEY", "test-delete-key")
+        media = _seed(db, filename="protected-3.jpg", status="indexed")
+
+        with patch("find_api.routers.gallery.delete_file"):
+            response = client.delete(
+                f"/api/image/{media.id}",
+                headers={"X-API-Key": "test-delete-key"},
+            )
+
+        assert response.status_code == 200
+        assert db.query(Media).filter(Media.id == media.id).first() is None

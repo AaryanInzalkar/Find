@@ -4,8 +4,8 @@ Gallery endpoint for browsing images
 
 import json
 import logging
-from typing import Literal, Optional
-from fastapi import APIRouter, Depends, Query, HTTPException
+from typing import Annotated, Literal, Optional
+from fastapi import APIRouter, Depends, Header, Query, HTTPException
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
@@ -322,8 +322,37 @@ def reprocess_image(media_id: int, db: Session = Depends(get_db)):
     return {"media_id": media_id, "job_id": job.id, "status": "queued"}
 
 
+def _remove_media_id_from_clusters(db: Session, media_id: int) -> None:
+    """Drop a deleted media id from every cluster that references it."""
+    for cluster in db.query(Cluster).all():
+        current_members = cluster.member_ids or []
+        if media_id not in current_members:
+            continue
+        cluster.member_ids = [
+            member_id for member_id in current_members if member_id != media_id
+        ]
+        cluster.member_count = len(cluster.member_ids)
+
+
+def require_delete_auth(
+    x_api_key: Annotated[Optional[str], Header(alias="X-API-Key")] = None,
+) -> None:
+    """Optional API-key guard for destructive deletes (off when DELETE_API_KEY unset)."""
+    required_key = settings.DELETE_API_KEY
+    if not required_key:
+        return
+    if not x_api_key:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    if x_api_key != required_key:
+        raise HTTPException(status_code=403, detail="Forbidden")
+
+
 @router.delete("/image/{media_id}")
-def delete_image(media_id: int, db: Session = Depends(get_db)):
+def delete_image(
+    media_id: int,
+    db: Session = Depends(get_db),
+    _: None = Depends(require_delete_auth),
+):
     media = db.query(Media).filter(Media.id == media_id).first()
     if not media:
         raise HTTPException(404, "Image not found")
@@ -347,14 +376,7 @@ def delete_image(media_id: int, db: Session = Depends(get_db)):
     db.delete(media)
     db.flush()
 
-    clusters = db.query(Cluster).filter(Cluster.member_ids.contains([media_id])).all()
-    for cluster in clusters:
-        current_members = cluster.member_ids or []
-        if media_id in current_members:
-            cluster.member_ids = [
-                member_id for member_id in current_members if member_id != media_id
-            ]
-            cluster.member_count = len(cluster.member_ids)
+    _remove_media_id_from_clusters(db, media_id)
 
     db.commit()
 
