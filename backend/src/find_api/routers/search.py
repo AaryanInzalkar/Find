@@ -21,7 +21,7 @@ router = APIRouter()
 @router.get("/search")
 def search_images(
     q: str = Query(..., min_length=1, description="Search query"),
-   limit: int = Query(24, ge=1, le=100, description="Maximum results to return"),
+    limit: int = Query(24, ge=1, le=100, description="Maximum results to return"),
     skip: int = Query(0, ge=0, description="Number of results to skip"),
     debug: bool = Query(False, description="Include retrieval diagnostics in response"),
     db: Session = Depends(get_db),

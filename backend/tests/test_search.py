@@ -175,6 +175,7 @@ class TestSearchResponseShape:
         response = client.get("/api/search")
         assert response.status_code == 422
 
+
 class TestSearchDiagnostics:
     """Tests for the debug diagnostics response behavior."""
 
@@ -214,7 +215,9 @@ class TestSearchDiagnostics:
 
     def test_diagnostics_present_when_debug_true_local(self, client):
         """diagnostics block is returned when debug=True in local environment."""
-        response = self._mock_search_with_debug(client, [], debug=True, environment="local")
+        response = self._mock_search_with_debug(
+            client, [], debug=True, environment="local"
+        )
 
         assert response.status_code == 200
         body = response.json()
@@ -233,28 +236,36 @@ class TestSearchDiagnostics:
 
     def test_diagnostics_present_when_debug_true_development(self, client):
         """diagnostics block is returned when debug=True in development environment."""
-        response = self._mock_search_with_debug(client, [], debug=True, environment="development")
+        response = self._mock_search_with_debug(
+            client, [], debug=True, environment="development"
+        )
 
         assert response.status_code == 200
         assert "diagnostics" in response.json()
 
     def test_diagnostics_absent_when_debug_false(self, client):
         """diagnostics block is NOT returned when debug=False."""
-        response = self._mock_search_with_debug(client, [], debug=False, environment="local")
+        response = self._mock_search_with_debug(
+            client, [], debug=False, environment="local"
+        )
 
         assert response.status_code == 200
         assert "diagnostics" not in response.json()
 
     def test_diagnostics_absent_in_production(self, client):
         """diagnostics block is NOT returned in production even if debug=True."""
-        response = self._mock_search_with_debug(client, [], debug=True, environment="production")
+        response = self._mock_search_with_debug(
+            client, [], debug=True, environment="production"
+        )
 
         assert response.status_code == 200
         assert "diagnostics" not in response.json()
 
     def test_diagnostics_absent_in_staging(self, client):
         """diagnostics block is NOT returned in staging even if debug=True."""
-        response = self._mock_search_with_debug(client, [], debug=True, environment="staging")
+        response = self._mock_search_with_debug(
+            client, [], debug=True, environment="staging"
+        )
 
         assert response.status_code == 200
         assert "diagnostics" not in response.json()
