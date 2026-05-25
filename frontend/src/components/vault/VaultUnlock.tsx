@@ -18,6 +18,13 @@ export function VaultUnlock() {
       return;
     }
 
+    const passphrase = input.value.trim();
+    if (!passphrase) {
+      setErrorMessage("Enter a vault passphrase to continue.");
+      input.focus();
+      return;
+    }
+
     setErrorMessage(null);
     setIsSubmitting(true);
 
@@ -25,15 +32,17 @@ export function VaultUnlock() {
       const response = await api.post<{ session_token: string }>(
         "/api/vault/unlock",
         {
-          passphrase: input.value,
+          passphrase,
         },
       );
       vaultStore.getState().unlock(response.data.session_token);
     } catch (error) {
-      if (!axios.isAxiosError(error) || error.response?.status === 401) {
-        setErrorMessage("Incorrect passphrase or vault not initialized");
+      if (axios.isAxiosError(error) && error.response?.status === 401) {
+        setErrorMessage("Incorrect vault passphrase.");
       } else {
-        setErrorMessage("Incorrect passphrase or vault not initialized");
+        setErrorMessage(
+          "Vault could not be unlocked right now. Please try again.",
+        );
       }
     } finally {
       input.value = "";
@@ -52,13 +61,22 @@ export function VaultUnlock() {
       >
         Vault passphrase
       </label>
+      <p className="text-xs leading-5 text-[color:var(--silver)]">
+        First time here? Enter a new passphrase to create your vault. After
+        that, use the same passphrase every time you unlock it.
+      </p>
       <input
         id="vault-passphrase"
         name="passphrase"
         type="password"
         autoComplete="current-password"
+        onChange={() => {
+          if (errorMessage) {
+            setErrorMessage(null);
+          }
+        }}
         className="rounded-2xl border border-[var(--frost)] bg-[color:var(--surface-soft)] px-4 py-3 text-sm text-[color:var(--near-white)] outline-none transition focus:border-[color:var(--blue)]"
-        placeholder="Enter vault passphrase"
+        placeholder="Enter or create vault passphrase"
       />
       <button
         type="submit"
