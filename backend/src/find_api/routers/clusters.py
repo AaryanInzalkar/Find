@@ -29,11 +29,7 @@ def get_clusters(db: Session = Depends(get_db)):
     for cluster in clusters:
         # Get sample images from cluster
         sample_ids = (cluster.member_ids or [])[:5]
-        sample_media = (
-            db.query(Media)
-            .filter(Media.id.in_(sample_ids), Media.is_hidden.is_(False))
-            .all()
-        )
+        sample_media = db.query(Media).filter(Media.id.in_(sample_ids)).all()
 
         samples = []
         for media in sample_media:
@@ -90,11 +86,7 @@ def get_cluster_detail(cluster_id: int, db: Session = Depends(get_db)):
 
     # Get all member media
     member_ids = cluster.member_ids or []
-    members = (
-        db.query(Media)
-        .filter(Media.id.in_(member_ids), Media.is_hidden.is_(False))
-        .all()
-    )
+    members = db.query(Media).filter(Media.id.in_(member_ids)).all()
 
     member_list = []
     for media in members:

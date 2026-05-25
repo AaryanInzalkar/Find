@@ -48,14 +48,10 @@ async def upload_images(
             results.append(result)
         except HTTPException:
             raise
-        except Exception:
-            logger.exception("Failed to upload %s", file.filename)
+        except Exception as e:
+            logger.error(f"Failed to upload {file.filename}: {e}")
             results.append(
-                {
-                    "filename": file.filename,
-                    "status": "failed",
-                    "error": "Upload failed. Please retry.",
-                }
+                {"filename": file.filename, "status": "failed", "error": str(e)}
             )
 
     return {"results": results, "total": len(results)}
@@ -177,13 +173,15 @@ async def upload_bulk_images(
                             "error": detail,
                         }
                     )
-                except Exception:
-                    logger.exception("Failed to process %s from bulk upload", filename)
+                except Exception as exc:
+                    logger.error(
+                        f"Failed to process {filename} from bulk upload: {exc}"
+                    )
                     results.append(
                         {
                             "filename": filename,
                             "status": "failed",
-                            "error": "Upload failed. Please retry.",
+                            "error": str(exc),
                         }
                     )
 

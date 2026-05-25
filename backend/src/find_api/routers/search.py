@@ -2,6 +2,8 @@
 Search endpoint for semantic image search
 """
 
+import time
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import text
@@ -22,6 +24,7 @@ def search_images(
     q: str = Query(..., min_length=1, description="Search query"),
     limit: int = Query(24, ge=1, le=100, description="Maximum results to return"),
     skip: int = Query(0, ge=0, description="Number of results to skip"),
+    debug: bool = Query(False, description="Include retrieval diagnostics in response"),
     db: Session = Depends(get_db),
 ):
     """
@@ -31,31 +34,30 @@ def search_images(
         q: Search query (natural language)
         limit: Maximum number of results (default: 24, max: 100)
         skip: Number of results to skip for pagination (default: 0)
+        debug: If True, include local timing and retrieval diagnostics
 
     Returns:
         Paginated list of matching images with metadata for frontend navigation.
     """
-    # Generate query embedding
+    t_total_start = time.perf_counter()
+
     if settings.ML_MODE.lower() == "mock":
         from find_api.ml.mock_embedder import get_mock_embedder
-
         embedder = get_mock_embedder()
     else:
         from find_api.ml.clip_embedder import get_clip_embedder
-
         embedder = get_clip_embedder()
 
+    t_embed_start = time.perf_counter()
     query_embedding = embedder.embed_text(q)
+    embedding_ms = (time.perf_counter() - t_embed_start) * 1000
 
-    # Convert to string format for pgvector
     embedding_str = "[" + ",".join(map(str, query_embedding)) + "]"
 
-    # Perform vector similarity search with pagination
-    # Using cosine distance (1 - cosine similarity)
-    # Added threshold to filter irrelevant results
+    # SigLIP similarities can be lower than OpenAI CLIP.
+    # Lowering threshold to ensure results are returned.
     threshold = -1.0 if settings.ML_MODE.lower() == "mock" else 0.45
 
-    # First get total count of matching results
     count_query = text(
         """
         SELECT COUNT(*) as total
@@ -70,7 +72,6 @@ def search_images(
     )
     total_count = count_result.scalar() or 0
 
-    # Get paginated results
     query_sql = text(
         """
         WITH ranked_results AS (
@@ -102,6 +103,7 @@ def search_images(
     """
     )
 
+    t_retrieval_start = time.perf_counter()
     result = db.execute(
         query_sql,
         {
@@ -111,13 +113,13 @@ def search_images(
             "threshold": threshold,
         },
     )
+    rows = result.fetchall()
+    retrieval_ms = (time.perf_counter() - t_retrieval_start) * 1000
 
-    # Build response
     results = []
-    for row in result:
+    for row in rows:
         metadata_payload: Dict[str, object] = {}
 
-        # Safely coerce metadata_json into dict
         raw_metadata = row.metadata_json
         if raw_metadata:
             if isinstance(raw_metadata, dict):
@@ -131,7 +133,6 @@ def search_images(
         if not isinstance(metadata_payload, dict):
             metadata_payload = {}
 
-        # Build metadata object compatible with frontend expectations
         media_metadata = {
             "id": row.id,
             "filename": row.filename,
@@ -165,11 +166,12 @@ def search_images(
             }
         )
 
-    # Calculate pagination metadata
+    total_ms = (time.perf_counter() - t_total_start) * 1000
+
     page = (skip // limit) + 1 if limit > 0 else 1
     has_more = (skip + len(results)) < total_count
 
-    return {
+    response: Dict = {
         "query": q,
         "results": results,
         "total": total_count,
@@ -178,3 +180,16 @@ def search_images(
         "skip": skip,
         "has_more": has_more,
     }
+
+    debug_enabled = debug and settings.ENVIRONMENT in {"local", "development"}
+    if debug_enabled:
+        response["diagnostics"] = {
+            "embedding_ms": round(embedding_ms, 2),
+            "retrieval_ms": round(retrieval_ms, 2),
+            "total_ms": round(total_ms, 2),
+            "results_returned": len(results),
+            "similarity_threshold": threshold,
+            "ml_mode": settings.ML_MODE,
+        }
+
+    return response

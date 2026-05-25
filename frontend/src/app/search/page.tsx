@@ -12,7 +12,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { FeedbackRating } from "@/components/feedback-rating";
 import { ImagePreviewModal } from "@/components/image-preview-modal";
 import { StatusIndicator } from "@/components/status-indicator";
-import { type SearchResult, searchImages, submitSearchRating } from "@/lib/api";
+import { searchImages, submitSearchRating } from "@/lib/api";
 import { MINIO_URL_REFRESH_INTERVAL_MS, resolveMediaUrl } from "@/lib/media";
 
 const examples = [
@@ -24,90 +24,36 @@ const examples = [
 
 export default function SearchPage() {
   const [query, setQuery] = useState("");
-  const [activeQuery, setActiveQuery] = useState("");
   const [selectedMediaId, setSelectedMediaId] = useState<number | null>(null);
-  const [allResults, setAllResults] = useState<SearchResult[]>([]);
-  const [hasMore, setHasMore] = useState(false);
-  const [currentSkip, setCurrentSkip] = useState(0);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const clearedRef = useRef(false);
 
-  const LIMIT = 24;
-
   const searchMutation = useMutation({
-    mutationFn: async (params: {
-      searchQuery: string;
-      limit?: number;
-      skip?: number;
-    }) => {
-      return searchImages({
-        query: params.searchQuery,
-        limit: params.limit ?? LIMIT,
-        skip: params.skip ?? 0,
-      });
-    },
-    onSuccess: (data) => {
-      setAllResults(data.results);
-      setHasMore(data.has_more);
-      setCurrentSkip(data.skip + data.results.length);
-    },
+    mutationFn: (searchQuery: string) =>
+      searchImages({ query: searchQuery, limit: 24 }),
   });
+  const activeQuery = searchMutation.data?.query;
+  const { mutate } = searchMutation;
 
-  // Periodic refresh - update first page results without losing loaded pages
   useEffect(() => {
     if (!activeQuery) return;
 
     const intervalId = setInterval(() => {
-      const refreshLimit = Math.min(Math.max(currentSkip, LIMIT), 100);
-      searchMutation.mutate({
-        searchQuery: activeQuery,
-        limit: refreshLimit,
-        skip: 0,
-      });
+      mutate(activeQuery);
     }, MINIO_URL_REFRESH_INTERVAL_MS);
 
     return () => clearInterval(intervalId);
-  }, [activeQuery, currentSkip, searchMutation.mutate]);
+  }, [activeQuery, mutate]);
 
   const handleSearch = (event: React.FormEvent) => {
     event.preventDefault();
-    const trimmedQuery = query.trim();
-    if (trimmedQuery) {
+    if (query.trim()) {
       clearedRef.current = false;
       setSelectedMediaId(null);
-      setAllResults([]);
-      setHasMore(false);
-      setCurrentSkip(0);
-      setActiveQuery(trimmedQuery);
-      searchMutation.mutate({
-        searchQuery: trimmedQuery,
-        limit: LIMIT,
-        skip: 0,
-      });
+      searchMutation.mutate(query.trim());
     }
   };
 
-  const loadMoreResults = async () => {
-    if (!activeQuery || isLoadingMore || !hasMore) return;
-
-    setIsLoadingMore(true);
-    try {
-      const data = await searchImages({
-        query: activeQuery,
-        limit: LIMIT,
-        skip: currentSkip,
-      });
-      setAllResults((prev) => [...prev, ...data.results]);
-      setHasMore(data.has_more);
-      setCurrentSkip(data.skip + data.results.length);
-    } catch (error) {
-      console.error("Failed to load more results:", error);
-    } finally {
-      setIsLoadingMore(false);
-    }
-  };
-
-  const results = allResults;
+  const results = searchMutation.data?.results ?? [];
   const selectedIndex = useMemo(() => {
     if (selectedMediaId === null) {
       return -1;
@@ -179,10 +125,6 @@ export default function SearchPage() {
                   setQuery("");
                   searchMutation.reset();
                   setSelectedMediaId(null);
-                  setActiveQuery("");
-                  setAllResults([]);
-                  setHasMore(false);
-                  setCurrentSkip(0);
                 }}
                 className="frost-button h-11 px-5 text-sm font-semibold"
               >
@@ -200,15 +142,7 @@ export default function SearchPage() {
                   clearedRef.current = false;
                   setQuery(example);
                   setSelectedMediaId(null);
-                  setAllResults([]);
-                  setHasMore(false);
-                  setCurrentSkip(0);
-                  setActiveQuery(example);
-                  searchMutation.mutate({
-                    searchQuery: example,
-                    limit: LIMIT,
-                    skip: 0,
-                  });
+                  searchMutation.mutate(example);
                 }}
                 className="frost-button px-3 py-1.5 text-xs text-[color:var(--silver)]"
               >
@@ -239,7 +173,7 @@ export default function SearchPage() {
           </div>
         )}
 
-        {allResults.length === 0 && searchMutation.data && (
+        {searchMutation.data && searchMutation.data.results.length === 0 && (
           <div className="frost-panel mx-auto max-w-md rounded-3xl px-8 py-14 text-center">
             <ImageOff className="mx-auto mb-4 h-10 w-10 text-[color:var(--muted)]" />
             <p className="mb-2 text-[color:var(--near-white)]">
@@ -251,20 +185,20 @@ export default function SearchPage() {
           </div>
         )}
 
-        {allResults.length > 0 && (
+        {searchMutation.data && searchMutation.data.results.length > 0 && (
           <div className="page-enter">
             <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
               <p className="text-sm text-[color:var(--silver)]">
-                {allResults.length} result
-                {allResults.length !== 1 ? "s" : ""} for{" "}
+                {searchMutation.data.results.length} result
+                {searchMutation.data.results.length !== 1 ? "s" : ""} for{" "}
                 <span className="text-[color:var(--near-white)]">
-                  {activeQuery}
+                  {searchMutation.data.query}
                 </span>
               </p>
             </div>
 
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-5 xl:grid-cols-6">
-              {allResults.map((result) => {
+              {searchMutation.data.results.map((result) => {
                 const imageSrc = resolveMediaUrl(
                   result.metadata.thumbnail_url ?? result.metadata.url,
                   result.metadata.minio_key,
@@ -330,7 +264,7 @@ export default function SearchPage() {
 
                     <div className="px-3 pb-3">
                       <FeedbackRating
-                        label=""
+                        label="Search match"
                         onRate={(rating) =>
                           submitSearchRating(result.media_id, rating)
                         }
@@ -340,26 +274,6 @@ export default function SearchPage() {
                 );
               })}
             </div>
-
-            {hasMore && (
-              <div className="mt-8 flex justify-center">
-                <button
-                  type="button"
-                  onClick={loadMoreResults}
-                  disabled={isLoadingMore}
-                  className="frost-button flex items-center gap-2 px-6 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {isLoadingMore ? (
-                    <>
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                      Loading...
-                    </>
-                  ) : (
-                    "Load More Results"
-                  )}
-                </button>
-              </div>
-            )}
           </div>
         )}
       </div>
