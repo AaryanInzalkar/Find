@@ -163,13 +163,16 @@ def generate_hybrid_embedding(
         caption = (metadata.get("caption") or "").strip()
 
         raw_objects = metadata.get("objects") or []
-        object_names = sorted(
-            {
-                str(obj.get("class", "")).strip()
-                for obj in raw_objects
-                if isinstance(obj, dict) and obj.get("class")
-            }
-        )
+        object_names_set: set[str] = set()
+        for obj in raw_objects:
+            if not isinstance(obj, dict):
+                continue
+
+            label = str(obj.get("class", "")).strip()
+            if label:
+                object_names_set.add(label)
+
+        object_names = sorted(object_names_set)
         objects_text = (
             "detected objects: " + ", ".join(object_names) if object_names else ""
         )

@@ -1,249 +1,151 @@
 #!/usr/bin/env python3
 """
-backend/scripts/smoke_hybrid_embedding.py
+Quick smoke checks for hybrid embedding signal selection.
 
-Smoke test for the empty-object-text embedding fix.
-Validates that the fixed generate_hybrid_embedding() behaves correctly
-across all signal combinations, without needing any real ML models.
+This script exercises the full-mode branch of
+`generate_hybrid_embedding()` using a mocked CLIP embedder so it can run
+without downloading real models or requiring a GPU.
 
-Usage (from repo root):
-    cd D:\\gssoc\\find\\Find
-    python -m pytest backend/tests/test_hybrid_embedding.py -v
-    python backend/scripts/smoke_hybrid_embedding.py
+Usage (from the backend directory):
+    uv run python scripts/smoke_hybrid_embedding.py
 """
 
 from __future__ import annotations
 
-import os
 import sys
-import traceback
+from unittest.mock import MagicMock, patch
+
 import numpy as np
 from PIL import Image
 
-# Put the backend src on the path
-SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-BACKEND_SRC = os.path.normpath(os.path.join(SCRIPT_DIR, "..", "src"))
-sys.path.insert(0, BACKEND_SRC)
-
-# Use mock ML mode so no real models are downloaded
-os.environ.setdefault("ML_MODE", "mock")
-
-# ---------------------------------------------------------------------------
-# Colour helpers
-# ---------------------------------------------------------------------------
-GREEN = "\033[92m"
-RED = "\033[91m"
-YELLOW = "\033[93m"
-RESET = "\033[0m"
-BOLD = "\033[1m"
-
-_passed = 0
-_failed = 0
+DIM = 8
 
 
-def ok(msg: str) -> None:
-    global _passed
-    _passed += 1
-    print(f"  {GREEN}✓{RESET} {msg}")
+def _unit(vector: np.ndarray) -> np.ndarray:
+    return vector / np.linalg.norm(vector)
 
 
-def fail(msg: str, detail: str = "") -> None:
-    global _failed
-    _failed += 1
-    print(f"  {RED}✗{RESET} {msg}")
-    if detail:
-        print(f"    {YELLOW}{detail}{RESET}")
+def _vector(seed: int) -> np.ndarray:
+    rng = np.random.default_rng(seed)
+    vector = rng.standard_normal(DIM).astype(np.float32)
+    return _unit(vector)
 
 
-def section(title: str) -> None:
-    print(f"\n{BOLD}{title}{RESET}")
+def _build_embedder(
+    image_vector: np.ndarray,
+    text_map: dict[str, np.ndarray],
+) -> MagicMock:
+    embedder = MagicMock()
+    embedder.embed_image.return_value = image_vector
+
+    def _embed_text(text):
+        if isinstance(text, str):
+            return text_map[text]
+        return np.stack([text_map[item] for item in text])
+
+    embedder.embed_text.side_effect = _embed_text
+    return embedder
 
 
-# ---------------------------------------------------------------------------
-# Helper: create a reproducible fake PIL image
-# ---------------------------------------------------------------------------
-def _fake_image(r: int = 100, g: int = 149, b: int = 237) -> Image.Image:
-    img = Image.new("RGB", (64, 64), color=(r, g, b))
-    return img
-
-
-# ---------------------------------------------------------------------------
-# Smoke checks
-# ---------------------------------------------------------------------------
-
-
-def smoke_mock_mode_returns_list():
-    """Mock mode path (no CLIP) still returns a valid float list."""
-    section("1. Mock mode basic sanity")
+def _run(
+    image_vector: np.ndarray,
+    *,
+    caption: str | None,
+    objects: list[object],
+    text_map: dict[str, np.ndarray],
+) -> tuple[np.ndarray, MagicMock]:
     from find_api.workers.processors import generate_hybrid_embedding
 
-    img = _fake_image()
-    metadata = {"caption": "a test image", "objects": []}
-    result = generate_hybrid_embedding(img, metadata)
+    fake_clip_module = MagicMock()
+    embedder = _build_embedder(image_vector, text_map)
+    fake_clip_module.get_clip_embedder.return_value = embedder
 
-    if not isinstance(result, list):
-        fail("result is not a list", f"got {type(result)}")
-        return
-    ok(f"returns list of length {len(result)}")
+    image = Image.new("RGB", (16, 16), color=(25, 25, 25))
 
-    if not all(isinstance(x, float) for x in result):
-        fail("result contains non-float values")
-        return
-    ok("all elements are float")
+    with (
+        patch("find_api.workers.processors.settings") as mock_settings,
+        patch.dict(sys.modules, {"find_api.ml.clip_embedder": fake_clip_module}),
+    ):
+        mock_settings.ML_MODE = "full"
+        result = generate_hybrid_embedding(
+            image,
+            {"caption": caption, "objects": objects},
+        )
 
-    norm = float(np.linalg.norm(result))
-    if abs(norm - 1.0) < 1e-4:
-        ok(f"output is unit-norm (norm={norm:.6f})")
-    else:
-        fail(f"output is NOT unit-norm (norm={norm:.6f})")
+    return np.array(result, dtype=np.float32), embedder
 
 
-def smoke_deterministic_for_same_input():
-    """Same image + metadata always produces same vector (determinism)."""
-    section("2. Determinism")
-    from find_api.workers.processors import generate_hybrid_embedding
-
-    img = _fake_image(120, 80, 200)
-    meta = {"caption": "a purple square", "objects": [{"class": "square"}]}
-
-    r1 = generate_hybrid_embedding(img, meta)
-    r2 = generate_hybrid_embedding(img, meta)
-
-    if r1 == r2:
-        ok("two calls with same input produce identical output")
-    else:
-        diff = float(np.linalg.norm(np.array(r1) - np.array(r2)))
-        fail(f"non-deterministic output (diff={diff:.6e})")
+def _assert(name: str, condition: bool, detail: str) -> None:
+    if not condition:
+        raise AssertionError(f"{name} failed: {detail}")
+    print(f"[ok] {name}")
 
 
-def smoke_different_images_different_vectors():
-    """Different images produce different embedding vectors."""
-    section("3. Different images → different vectors")
-    from find_api.workers.processors import generate_hybrid_embedding
+def main() -> None:
+    image_vector = _vector(1)
+    caption_vector = _vector(2)
+    objects_vector = _vector(3)
 
-    img_a = _fake_image(255, 0, 0)  # red
-    img_b = _fake_image(0, 0, 255)  # blue
-    meta = {"caption": "", "objects": []}
+    caption = "a sunny beach"
+    objects_text = "detected objects: cat, dog"
 
-    r_a = np.array(generate_hybrid_embedding(img_a, meta))
-    r_b = np.array(generate_hybrid_embedding(img_b, meta))
+    # Image-only path should never embed text.
+    result, embedder = _run(
+        image_vector,
+        caption="",
+        objects=[],
+        text_map={},
+    )
+    _assert(
+        "image-only result",
+        np.allclose(result, image_vector, atol=1e-5),
+        "expected image vector to pass through unchanged",
+    )
+    _assert(
+        "image-only skips text embedding",
+        embedder.embed_text.call_count == 0,
+        "embed_text should not be called when caption and objects are absent",
+    )
 
-    cosine = float(np.dot(r_a, r_b))
-    if not np.allclose(r_a, r_b):
-        ok(f"different images → different vectors (cosine={cosine:.4f})")
-    else:
-        fail("different images produced identical vectors")
+    # Caption + objects path should use one batched text call and re-normalize.
+    result, embedder = _run(
+        image_vector,
+        caption=caption,
+        objects=[{"class": "dog"}, {"class": "cat"}, {"class": "dog"}],
+        text_map={caption: caption_vector, objects_text: objects_vector},
+    )
+    expected = _unit(image_vector + caption_vector + objects_vector)
+    _assert(
+        "caption+objects average",
+        np.allclose(result, expected, atol=1e-5),
+        "expected equal-weight normalized combination",
+    )
+    _assert(
+        "caption+objects batched text call",
+        embedder.embed_text.call_args[0][0] == [caption, objects_text],
+        "expected batched embed_text call with caption and deduplicated objects",
+    )
 
+    # Whitespace-only object labels must not leak through as a ghost signal.
+    result, embedder = _run(
+        image_vector,
+        caption="",
+        objects=[{"class": "   "}, {"class": "\n\t"}],
+        text_map={"detected objects: ": objects_vector},
+    )
+    _assert(
+        "whitespace-only objects ignored",
+        np.allclose(result, image_vector, atol=1e-5),
+        "whitespace-only labels should not create an object-text embedding",
+    )
+    _assert(
+        "whitespace-only objects skip text embedding",
+        embedder.embed_text.call_count == 0,
+        "embed_text should not be called for stripped-empty labels",
+    )
 
-def smoke_no_objects_vs_with_objects_differ():
-    """
-    Same image: adding detected objects changes the embedding.
-    This verifies that the objects branch actually fires.
-    """
-    section("4. Adding objects changes the embedding")
-    from find_api.workers.processors import generate_hybrid_embedding
+    print("\nAll hybrid embedding smoke checks passed.")
 
-    img = _fake_image(80, 160, 80)
-    meta_no_objects = {"caption": "a forest", "objects": []}
-    meta_with_objects = {
-        "caption": "a forest",
-        "objects": [{"class": "tree"}, {"class": "bird"}],
-    }
-
-    r_no = np.array(generate_hybrid_embedding(img, meta_no_objects))
-    r_yes = np.array(generate_hybrid_embedding(img, meta_with_objects))
-
-    if not np.allclose(r_no, r_yes):
-        cosine = float(np.dot(r_no, r_yes))
-        ok(f"adding objects changes vector (cosine with/without={cosine:.4f})")
-    else:
-        fail("objects metadata had no effect on the embedding")
-
-
-def smoke_caption_changes_embedding():
-    """Adding a caption must change the embedding."""
-    section("5. Caption changes the embedding")
-    from find_api.workers.processors import generate_hybrid_embedding
-
-    img = _fake_image(200, 200, 50)
-    meta_no_cap = {"caption": "", "objects": []}
-    meta_with_cap = {"caption": "a golden field", "objects": []}
-
-    r_no = np.array(generate_hybrid_embedding(img, meta_no_cap))
-    r_yes = np.array(generate_hybrid_embedding(img, meta_with_cap))
-
-    if not np.allclose(r_no, r_yes):
-        ok("caption changes the embedding vector")
-    else:
-        fail("caption had no effect — check mock embedder's text path")
-
-
-def smoke_unit_norm_all_scenarios():
-    """All four signal combinations produce unit-norm output."""
-    section("6. Unit-norm output in all signal combinations")
-    from find_api.workers.processors import generate_hybrid_embedding
-
-    img = _fake_image()
-    scenarios = [
-        ("no caption, no objects", "", []),
-        ("caption only", "a sunny day", []),
-        ("objects only", "", [{"class": "sun"}]),
-        ("caption + objects", "a sunny day", [{"class": "sun"}]),
-    ]
-
-    for label, caption, objects in scenarios:
-        meta = {"caption": caption, "objects": objects}
-        result = generate_hybrid_embedding(img, meta)
-        norm = float(np.linalg.norm(result))
-        if abs(norm - 1.0) < 1e-4:
-            ok(f"{label}: norm={norm:.6f}")
-        else:
-            fail(f"{label}: NOT unit-norm (norm={norm:.6f})")
-
-
-def smoke_malformed_objects_no_crash():
-    """Objects missing 'class' key must not crash the pipeline."""
-    section("7. Malformed objects dict — no crash, no KeyError")
-    from find_api.workers.processors import generate_hybrid_embedding
-
-    img = _fake_image()
-    meta = {
-        "caption": "scene",
-        "objects": [
-            {"label": "cat"},  # wrong key
-            {"name": "dog"},  # wrong key
-            {},  # empty dict
-            "not a dict",  # not a dict at all
-        ],
-    }
-    try:
-        result = generate_hybrid_embedding(img, meta)
-        ok(f"no crash; result length={len(result)}")
-    except Exception as exc:
-        fail(f"crashed with: {exc}", traceback.format_exc())
-
-
-# ---------------------------------------------------------------------------
-# Entry point
-# ---------------------------------------------------------------------------
 
 if __name__ == "__main__":
-    print(f"\n{BOLD}=== Hybrid Embedding Smoke Tests ==={RESET}")
-    print(f"ML_MODE={os.environ.get('ML_MODE', 'not set')}")
-
-    smoke_mock_mode_returns_list()
-    smoke_deterministic_for_same_input()
-    smoke_different_images_different_vectors()
-    smoke_no_objects_vs_with_objects_differ()
-    smoke_caption_changes_embedding()
-    smoke_unit_norm_all_scenarios()
-    smoke_malformed_objects_no_crash()
-
-    total = _passed + _failed
-    print(f"\n{BOLD}Results: {_passed}/{total} passed{RESET}")
-    if _failed:
-        print(f"{RED}{_failed} test(s) FAILED{RESET}")
-        sys.exit(1)
-    else:
-        print(f"{GREEN}All checks passed!{RESET}")
-        sys.exit(0)
+    main()

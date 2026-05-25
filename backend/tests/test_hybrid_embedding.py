@@ -226,6 +226,17 @@ class TestHybridEmbeddingEdgeCases:
         embedder.embed_text.assert_not_called()
         np.testing.assert_allclose(result, IMG_VEC, atol=1e-5)
 
+    def test_whitespace_only_object_labels_ignored(self):
+        """Object labels that strip to empty text must not create an objects embedding."""
+        result, embedder = _run(
+            image_vec=IMG_VEC,
+            caption="",
+            objects=[{"class": "   "}, {"class": "\n\t"}],
+            text_map={"detected objects: ": EMPTY_VEC},
+        )
+        embedder.embed_text.assert_not_called()
+        np.testing.assert_allclose(result, IMG_VEC, atol=1e-5)
+
     def test_duplicate_object_classes_deduplicated(self):
         """Same class appearing multiple times → included once in objects_text."""
         objects_text = "detected objects: cat"
