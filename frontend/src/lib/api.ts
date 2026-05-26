@@ -18,6 +18,8 @@ export type AnalysisStageName =
   | "captioning"
   | "ocr"
   | "embedding";
+export type SortOrder = "newest" | "oldest";
+export type DateRangePreset = "last_30_days" | "last_60_days" | "last_90_days" | "custom";
 
 export type AnalysisStageStatus = {
   status: "pending" | "success" | "failed";
@@ -238,6 +240,10 @@ export const getGallery = async (
     limit?: number;
     status?: MediaStatus;
     liked?: boolean;
+    sortOrder?: SortOrder;
+    dateRange?: DateRangePreset;
+    dateStart?: string;
+    dateEnd?: string;
   } = {},
 ): Promise<GalleryResponse> => {
   const page = params.page || 1;
@@ -249,6 +255,10 @@ export const getGallery = async (
     limit,
     status: params.status,
     liked: params.liked,
+    sort_order: params.sortOrder || "newest",
+    date_range: params.dateRange,
+    date_start: params.dateStart,
+    date_end: params.dateEnd,
   };
 
   const response = await api.get<GalleryResponse>("/api/gallery", {
