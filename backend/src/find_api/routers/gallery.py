@@ -129,6 +129,13 @@ def parse_date_range(
                     custom_end,
                 )
                 start_date, end_date = end_date, start_date
+                # Correct time components after swap: earlier date should be 00:00:00, later date 23:59:59.999999
+                start_date = start_date.replace(
+                    hour=0, minute=0, second=0, microsecond=0
+                )
+                end_date = end_date.replace(
+                    hour=23, minute=59, second=59, microsecond=999999
+                )
             return start_date, end_date
 
     return None, None
