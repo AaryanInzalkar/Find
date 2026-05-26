@@ -615,21 +615,21 @@ class TestGalleryDateFiltering:
         assert body["total"] == 1
         assert body["items"][0]["id"] == liked_recent.id
 
-    def test_invalid_custom_dates_are_ignored(self, client, db):
-        """Invalid custom dates are gracefully ignored."""
+    def test_invalid_custom_dates_are_rejected(self, client, db):
+        """Invalid custom dates return a validation error."""
         _seed(db, filename="valid.jpg", status="indexed")
 
-        body = client.get(
+        response = client.get(
             "/api/gallery",
             params={
                 "date_range": "custom",
                 "date_start": "not-a-date",
                 "date_end": "2025-12-99",
             },
-        ).json()
+        )
 
-        # Should return all items since invalid dates are ignored
-        assert body["total"] == 1
+        assert response.status_code == 422
+        assert response.json()["detail"] == "Invalid date_start. Use YYYY-MM-DD."
 
     def test_date_range_none_returns_all(self, client, db):
         """No date range parameter returns all items."""

@@ -104,8 +104,12 @@ def parse_date_range(
                 start_date = datetime.strptime(custom_start, "%Y-%m-%d").replace(
                     tzinfo=timezone.utc
                 )
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as exc:
             logger.warning("Invalid custom_start date: %s", custom_start)
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid date_start. Use YYYY-MM-DD.",
+            ) from exc
 
         try:
             if custom_end:
@@ -117,8 +121,12 @@ def parse_date_range(
                     microsecond=999999,
                     tzinfo=timezone.utc,
                 )
-        except (ValueError, TypeError):
+        except (ValueError, TypeError) as exc:
             logger.warning("Invalid custom_end date: %s", custom_end)
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid date_end. Use YYYY-MM-DD.",
+            ) from exc
 
         if start_date or end_date:
             # Normalize reversed date bounds
