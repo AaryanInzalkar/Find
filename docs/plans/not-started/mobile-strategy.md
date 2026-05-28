@@ -180,3 +180,15 @@ In short: prove the mobile experience with the web stack first, then earn the ri
 
 - Discussion: issue #37
 - Current architecture: [`README.md`](../../../README.md)
+- Manual PWA test checklist: [PWA Install & Offline Shell Testing](#10-pwa-install--offline-shell-test-checklist)
+
+## 10. PWA Install & Offline Shell Test Checklist
+
+| # | Check | Expected result | Backend needed? |
+|---|-------|-----------------|-----------------|
+| 1 | Open app URL in Chrome/Edge on desktop | Install icon appears in address bar | Yes |
+| 2 | Open app URL in Safari/Chrome on mobile | "Add to Home Screen" banner or menu option available | Yes |
+| 3 | Tap install / Add to Home Screen | App icon added; opens in standalone window without browser chrome | No |
+| 4 | Launch installed PWA while backend is running | App loads normally with full functionality | Yes |
+| 5 | Launch installed PWA while backend is stopped | Offline shell page renders (cached app shell); no blank screen | No |
+| 6 | Reload offline shell page | Shell re-renders from cache without network error | No |
