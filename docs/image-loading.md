@@ -48,11 +48,12 @@ Thumbnail generation itself is **out of scope for this document**. This page doc
 
 | Endpoint | Current behavior | Intended behavior |
 |---|---|---|
-| `GET /api/gallery` | Returns full-resolution URLs | Should return thumbnail URLs |
-| `GET /api/search?q=...` | Returns full-resolution URLs | Should return thumbnail URLs |
-| `GET /api/clusters` | Returns full-resolution URLs | Should return thumbnail URLs |
-| `GET /api/cluster/{cluster_id}` | Returns full-resolution URLs | Should return thumbnail URLs |
+| `GET /api/gallery` | Returns `url` and `thumbnail_url` | Frontend should use `thumbnail_url` |
+| `GET /api/search?q=...` | Returns `url` and `thumbnail_url` | Frontend should use `thumbnail_url` |
+| `GET /api/clusters` | Returns `url` and `thumbnail_url` | Frontend should use `thumbnail_url` |
+| `GET /api/cluster/{cluster_id}` | Returns `url` and `thumbnail_url` | Frontend should use `thumbnail_url` |
 | `GET /api/image/{media_id}` | Returns full-resolution image | Retain full-resolution for modal/download |
+| `GET /api/image/{media_id}/thumbnail` | Serves thumbnail image | Use this in all grid/list views |
 
 ## See Also
 
