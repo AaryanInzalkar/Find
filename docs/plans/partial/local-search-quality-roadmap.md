@@ -1,5 +1,13 @@
 # Local Search Quality Roadmap
 
+- **Status:** Partially complete
+- **Last reviewed:** 2026-05-29
+- **Related:** Issue #98
+- **Current implementation status:** Find already has semantic search backed by pgvector. The worker
+  stores a normalized hybrid vector built from available image, caption, and detected-object signals;
+  the search endpoint embeds the text query and ranks indexed, non-hidden media by cosine similarity.
+  Evaluation, diagnostics, reranking, ANN tuning, and reliable quality targets remain planned work.
+
 ## Overview
 
 This roadmap defines a measurable plan for improving local semantic image search quality in Find.
@@ -20,16 +28,16 @@ Related issues:
 
 ---
 
-# Current Search Pipeline
+## Current Search Pipeline
 
 Current pipeline:
 
-1. Generate image captions using Florence-2
-2. Generate image embeddings using SigLIP
-3. Store embeddings in pgvector
-4. Convert text query into embedding
-5. Perform cosine similarity search
-6. Return ranked results above threshold
+1. Generate image metadata: Florence-2 captions, object detection, and OCR text where available.
+2. Generate SigLIP embeddings for the image plus usable caption/object text signals.
+3. Store the normalized hybrid media vector in pgvector.
+4. Convert the text query into a SigLIP text embedding.
+5. Run pgvector cosine-similarity search over indexed, non-hidden media with a similarity threshold.
+6. Return paginated results with similarity scores, media metadata, URLs, and thumbnail URLs.
 
 Current strengths:
 
@@ -39,7 +47,7 @@ Current strengths:
 
 Current weaknesses:
 
-- Caption failures reduce retrieval quality
+- Caption failures can reduce hybrid retrieval quality
 - Text-heavy images are inconsistent
 - No measurable evaluation metrics
 - No reranking stage
@@ -49,11 +57,11 @@ Current weaknesses:
 
 ---
 
-# Target Metrics
+## Target Metrics
 
 The search system should optimize for measurable retrieval quality.
 
-## Quality Metrics
+### Quality Metrics
 
 | Metric | Goal |
 |---|---|
@@ -63,7 +71,7 @@ The search system should optimize for measurable retrieval quality.
 | Caption failure rate | < 2% |
 | Empty result rate | < 5% |
 
-## Latency Targets
+### Latency Targets
 
 | Stage | Target |
 |---|---|
@@ -74,9 +82,9 @@ The search system should optimize for measurable retrieval quality.
 
 ---
 
-# Roadmap Stages
+## Roadmap Stages
 
-## Stage 1: Retrieval Diagnostics and Evaluation
+### Stage 1: Retrieval Diagnostics and Evaluation
 
 Related issues:
 - #96
@@ -106,7 +114,7 @@ None
 
 ---
 
-## Stage 2: Caption Reliability
+### Stage 2: Caption Reliability
 
 Related issue:
 - #12
@@ -135,7 +143,7 @@ Can run independently from ANN or reranking work.
 
 ---
 
-## Stage 3: Embedding Strategy Improvements
+### Stage 3: Embedding Strategy Improvements
 
 Related issues:
 - #17
@@ -147,7 +155,7 @@ Improve semantic representation quality.
 Tasks:
 
 - Benchmark SigLIP vs CLIP variants
-- Compare caption-only vs image-only embeddings
+- Compare caption-only, image-only, and current hybrid image/caption/object embeddings
 - Test combined OCR + caption embeddings
 - Evaluate multi-vector retrieval
 - Measure embedding dimensionality tradeoffs
@@ -164,7 +172,7 @@ Requires evaluation harness from Stage 1.
 
 ---
 
-## Stage 4: Retrieval and Ranking Improvements
+### Stage 4: Retrieval and Ranking Improvements
 
 Related issues:
 - #17
@@ -199,7 +207,7 @@ Caption quality improvements from Stage 2 improve reranking quality but are not 
 
 ---
 
-## Stage 5: Scale and ANN Optimization
+### Stage 5: Scale and ANN Optimization
 
 Related issue:
 - #101
@@ -228,7 +236,7 @@ Requires baseline metrics from Stage 1.
 
 ---
 
-# Dependency Map
+## Dependency Map
 
 | Area | Depends On |
 |---|---|
@@ -241,7 +249,7 @@ Requires baseline metrics from Stage 1.
 
 ---
 
-# Benchmarking Principles
+## Benchmarking Principles
 
 Before major retrieval changes:
 
@@ -253,7 +261,7 @@ Before major retrieval changes:
 
 ---
 
-# Success Criteria
+## Success Criteria
 
 The roadmap is successful if:
 
