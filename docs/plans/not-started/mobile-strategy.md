@@ -4,7 +4,7 @@
 
 **Date:** 2026-05-14
 
-**Last reviewed:** 2026-05-28
+**Last reviewed:** 2026-05-29
 
 **Current implementation status:** The main web UI exists, but the PWA install shell, mobile pairing/auth flow, offline upload queue, and mobile-specific connection model are not implemented.
 
@@ -184,11 +184,14 @@ In short: prove the mobile experience with the web stack first, then earn the ri
 
 ## 10. PWA Install & Offline Shell Test Checklist
 
-| # | Check | Expected result | Backend needed? |
-|---|-------|-----------------|-----------------|
-| 1 | Open app URL in Chrome/Edge on desktop | Install icon appears in address bar | Yes |
-| 2 | Open app URL in Safari/Chrome on mobile | "Add to Home Screen" banner or menu option available | Yes |
-| 3 | Tap install / Add to Home Screen | App icon added; opens in standalone window without browser chrome | No |
-| 4 | Launch installed PWA while backend is running | App loads normally with full functionality | Yes |
-| 5 | Launch installed PWA while backend is stopped | Offline shell page renders (cached app shell); no blank screen | No |
-| 6 | Reload offline shell page | Shell re-renders from cache without network error | No |
+Use this checklist after the PWA manifest and service worker are implemented. The current project
+does not yet have the installable shell, so failing these checks is expected until that work lands.
+
+| # | Check | Pass signal | Fail signal | Backend API needed? |
+|---|-------|-------------|-------------|---------------------|
+| 1 | Open the app URL in Chrome/Edge on desktop | Browser detects a valid installable app and shows install UI or DevTools manifest status is installable | Manifest, icon, service worker, or HTTPS/installability errors appear | No |
+| 2 | Open the app URL in Safari/Chrome on mobile | Browser allows Add to Home Screen and uses the configured app name/icon | Add to Home Screen is unavailable or produces a generic browser shortcut | No |
+| 3 | Install the app and launch it from the OS app icon | App opens in standalone/display-mode UI without normal browser chrome | App opens as a normal browser tab or shows the wrong icon/name | No |
+| 4 | Launch the installed PWA while the Find backend is reachable | Shell loads and backend-backed views can fetch live data normally | Shell loads but backend-backed views fail unexpectedly | Yes |
+| 5 | Stop the backend after one successful online load, then relaunch the installed PWA | Cached app shell renders a clear offline or disconnected state; no blank screen | Browser network error, blank page, or uncaught app error appears | No |
+| 6 | Reload the offline shell page while still disconnected | Cached shell re-renders from service worker cache and keeps the disconnected state | Reload bypasses cache and fails with a network error | No |
