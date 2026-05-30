@@ -512,14 +512,14 @@ export function ImagePreviewModal({
               <h3 className="mb-2 text-xs font-semibold uppercase text-[color:var(--muted)]">
                 Caption
               </h3>
-              <div className="space-y-3 rounded-2xl border border-[var(--frost)] bg-[color:var(--surface-soft)] p-4">
+              <div className="min-w-0 space-y-3 overflow-hidden rounded-2xl border border-[var(--frost)] bg-[color:var(--surface-soft)] p-4">
                 {status === "pending" || status === "processing" ? (
                   <p className="text-sm text-[color:var(--silver)] flex items-center gap-2">
                     <Loader2 className="h-3.5 w-3.5 animate-spin text-[color:var(--blue)]" />
                     Generating caption...
                   </p>
                 ) : captionStage?.status === "failed" ? (
-                  <p className="text-sm text-[#ff9bab] font-medium leading-6">
+                  <p className="min-w-0 break-words text-sm font-medium leading-6 text-[#ff9bab] [overflow-wrap:anywhere]">
                     Captioning failed: {captionStage.error || "Unknown error"}
                   </p>
                 ) : caption ? (
@@ -552,7 +552,7 @@ export function ImagePreviewModal({
               <h3 className="mb-2 text-xs font-semibold uppercase text-[color:var(--muted)]">
                 Metadata
               </h3>
-              <div className="space-y-3 rounded-2xl border border-[var(--frost)] bg-[color:var(--surface-soft)] p-4">
+              <div className="min-w-0 space-y-3 overflow-hidden rounded-2xl border border-[var(--frost)] bg-[color:var(--surface-soft)] p-4">
                 {status === "pending" || status === "processing" ? (
                   <div>
                     <p className="mb-2 text-xs font-medium uppercase text-[color:var(--muted)]">
@@ -568,7 +568,7 @@ export function ImagePreviewModal({
                     <p className="mb-2 text-xs font-medium uppercase text-[color:var(--muted)]">
                       Detected objects
                     </p>
-                    <p className="text-sm text-[#ff9bab] font-medium">
+                    <p className="min-w-0 break-words text-sm font-medium text-[#ff9bab] [overflow-wrap:anywhere]">
                       Object detection failed:{" "}
                       {objectDetectionStage.error || "Unknown error"}
                     </p>
@@ -645,7 +645,7 @@ export function ImagePreviewModal({
                     <p className="mb-2 text-xs font-medium uppercase text-[color:var(--muted)]">
                       OCR text
                     </p>
-                    <p className="text-sm text-[#ff9bab] font-medium">
+                    <p className="min-w-0 break-words text-sm font-medium text-[#ff9bab] [overflow-wrap:anywhere]">
                       OCR failed: {ocrStage.error || "Unknown error"}
                     </p>
                   </div>
@@ -751,7 +751,7 @@ export function ImagePreviewModal({
             )}
 
             {detailData?.error && (
-              <p className="rounded-2xl border border-[var(--red-soft)] bg-[var(--red-soft)] p-3 text-sm text-[#ff9bab]">
+              <p className="min-w-0 break-words rounded-2xl border border-[var(--red-soft)] bg-[var(--red-soft)] p-3 text-sm text-[#ff9bab] [overflow-wrap:anywhere]">
                 {detailData.error}
               </p>
             )}
