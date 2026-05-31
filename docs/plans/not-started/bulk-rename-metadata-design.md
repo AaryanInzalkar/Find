@@ -225,16 +225,15 @@ When a user bulk-renames images in the UI, there are three behavioral options:
 - No changes to `media.minio_key` in this phase; filenames edited in `media.filename` only
 
 **API Endpoint:**
-```
+```http
 POST /api/bulk-edit
+```
+
+```json
 {
-  "operation": "rename" | "metadata",
-  "media_ids": [1, 2, 3, ...],
+  "media_ids": [1, 2, 3],
   "updates": {
-    "filename": "new_name.jpg",  // for rename
-    "caption": "...",             // for metadata
-    "liked": true,
-    "tags": ["tag1", "tag2"]
+    "filename": "new_name.jpg"
   }
 }
 ```
