@@ -52,6 +52,7 @@ class FakeMedia(Base):
     content_type: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     file_size: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
     liked: Mapped[bool] = mapped_column(Boolean, default=False)
+    is_hidden: Mapped[bool] = mapped_column(Boolean, default=False)
     status: Mapped[str] = mapped_column(String(50), default="pending")
     analysis_job_id: Mapped[Optional[str]] = mapped_column(String(64), nullable=True)
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
@@ -277,6 +278,34 @@ class TestReprocessEndpoint:
 
         assert call_args[0][0] is analyze_image
         assert call_args[0][1] == media.id
+        assert call_args[0][2] is True
+
+    @patch("find_api.routers.gallery.get_task_queue")
+    def test_reprocess_requests_model_failure_clear(self, mock_queue, client):
+        """Retrying analysis must let the worker reload previously failed models."""
+        mock_job = MagicMock()
+        mock_job.id = "fake-job-clear-model-state"
+        mock_queue.return_value.enqueue.return_value = mock_job
+
+        media = make_media(
+            status="indexed",
+            metadata_json={
+                "caption": "",
+                "stage_status": {
+                    "captioning": {
+                        "status": "failed",
+                        "error": "ModelUnavailableError",
+                    }
+                },
+            },
+        )
+
+        resp = client.post(f"/api/image/{media.id}/reprocess")
+
+        assert resp.status_code == 200
+        mock_queue.return_value.enqueue.assert_called_once()
+        call_args = mock_queue.return_value.enqueue.call_args
+        assert call_args[0][2] is True
 
     @patch("find_api.routers.gallery.get_task_queue")
     def test_repeated_reprocess_allowed(self, mock_queue, client):

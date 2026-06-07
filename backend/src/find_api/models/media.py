@@ -6,6 +6,7 @@ from sqlalchemy import (
     Column,
     Integer,
     String,
+    ForeignKey,
     DateTime,
     Text,
     JSON,
@@ -37,6 +38,9 @@ class Media(Base):
     liked = Column(
         Boolean, nullable=False, default=False, server_default=sa_text("false")
     )
+    is_hidden = Column(
+        Boolean, nullable=False, default=False, server_default=sa_text("false")
+    )
 
     # Status tracking
     status = Column(String(50), default="pending", index=True)
@@ -60,6 +64,13 @@ class Media(Base):
 
     # Clustering
     cluster_id = Column(Integer, index=True, nullable=True)
+    # Near-duplicate detection
+    duplicate_of = Column(
+        Integer,
+        ForeignKey("media.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
 
     # Vector embedding for semantic search
     vector = Column(Vector(settings.EMBEDDING_DIM))

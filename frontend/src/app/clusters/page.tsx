@@ -1,7 +1,15 @@
 "use client";
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Grid3x3, ImageOff, Loader2, Play, RefreshCw, X } from "lucide-react";
+import {
+  Check,
+  Grid3x3,
+  ImageOff,
+  Loader2,
+  Play,
+  RefreshCw,
+  X,
+} from "lucide-react";
 import Image from "next/image";
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
@@ -10,12 +18,15 @@ import {
   type PreviewMedia,
 } from "@/components/image-preview-modal";
 import {
+  type ClusterDetail,
+  type ClustersResponse,
   extractErrorMessage,
   getClusterDetail,
   getClusters,
   getGallery,
   getJobStatus,
   triggerClustering,
+  updateCluster,
 } from "@/lib/api";
 import {
   MINIO_URL_REFRESH_INTERVAL_MS,
@@ -52,6 +63,18 @@ function getJobStatusClass(status?: string) {
   }
 }
 
+function getClusterDisplayName(cluster: {
+  id: number;
+  label?: string | null;
+  description?: string | null;
+}) {
+  return (
+    cluster.label?.trim() ||
+    cluster.description?.trim() ||
+    `Cluster ${cluster.id}`
+  );
+}
+
 export default function ClustersPage() {
   const queryClient = useQueryClient();
   const [selectedClusterId, setSelectedClusterId] = useState<number | null>(
@@ -60,6 +83,7 @@ export default function ClustersPage() {
   const [previewMedia, setPreviewMedia] = useState<PreviewMedia | null>(null);
   const [clusterJobId, setClusterJobId] = useState<string | null>(null);
   const [filterText, setFilterText] = useState("");
+  const [clusterLabelDraft, setClusterLabelDraft] = useState("");
   const { data, isLoading, error, isFetching } = useQuery({
     queryKey: ["clusters"],
     queryFn: getClusters,
@@ -90,6 +114,17 @@ export default function ClustersPage() {
     queryFn: () => getGallery({ status: "indexed", limit: 1 }),
     refetchInterval: 10000,
   });
+
+  useEffect(() => {
+    setClusterLabelDraft(
+      selectedClusterQuery.data?.label ??
+        selectedClusterQuery.data?.description ??
+        "",
+    );
+  }, [
+    selectedClusterQuery.data?.label,
+    selectedClusterQuery.data?.description,
+  ]);
 
   useEffect(() => {
     if (!clusterJobId || !clusterJobQuery.data) {
@@ -134,6 +169,54 @@ export default function ClustersPage() {
     },
   });
 
+  const updateClusterMutation = useMutation({
+    mutationFn: ({ clusterId, label }: { clusterId: number; label: string }) =>
+      updateCluster(clusterId, { label }),
+    onSuccess: (cluster, variables) => {
+      const nextLabel = cluster.label?.trim() || null;
+
+      toast.success("Cluster name updated");
+      setClusterLabelDraft(nextLabel ?? "");
+      queryClient.setQueryData<ClustersResponse>(["clusters"], (current) => {
+        if (!current) {
+          return current;
+        }
+
+        return {
+          ...current,
+          clusters: current.clusters.map((item) =>
+            item.id === variables.clusterId
+              ? {
+                  ...item,
+                  label: nextLabel,
+                  description: cluster.description,
+                }
+              : item,
+          ),
+        };
+      });
+      queryClient.setQueryData<ClusterDetail>(
+        ["cluster-detail", variables.clusterId],
+        (current) =>
+          current
+            ? {
+                ...current,
+                label: nextLabel,
+                description: cluster.description,
+              }
+            : current,
+      );
+      queryClient.invalidateQueries({ queryKey: ["clusters"] });
+      queryClient.invalidateQueries({
+        queryKey: ["cluster-detail", variables.clusterId],
+      });
+      queryClient.invalidateQueries({ queryKey: ["image-detail"] });
+    },
+    onError: (error) => {
+      toast.error(extractErrorMessage(error, "Failed to rename cluster"));
+    },
+  });
+
   const totals = useMemo(() => {
     const totalImages = data?.clusters.reduce(
       (sum, cluster) => sum + cluster.member_count,
@@ -152,14 +235,26 @@ export default function ClustersPage() {
   const isClusterActionBusy =
     clusterMutation.isPending || clusterJobQuery.isFetching || isJobActive;
   const minClusterSize = data?.min_cluster_size ?? 2;
+  const effectiveMinClusterSize = Math.max(minClusterSize, 1);
   const indexedImageCount = indexedQuery.data?.total ?? 0;
   const hasEnoughIndexedImages =
-    !indexedQuery.isSuccess || indexedImageCount >= minClusterSize;
+    indexedQuery.isSuccess &&
+    indexedImageCount > 0 &&
+    indexedImageCount >= effectiveMinClusterSize;
   const isClusterButtonDisabled =
     isClusterActionBusy || !hasEnoughIndexedImages;
-  const clusteringUnavailableMessage = !hasEnoughIndexedImages
-    ? `Need at least ${minClusterSize} indexed images with vectors before clustering. Found ${indexedImageCount}.`
-    : null;
+  const clusteringUnavailableMessage =
+    indexedQuery.isSuccess && !hasEnoughIndexedImages
+      ? `Need at least ${effectiveMinClusterSize} indexed images to cluster. Found ${indexedImageCount}.`
+      : null;
+
+  const emptyStateVariant = useMemo(() => {
+    if (!indexedQuery.isSuccess) return "loading";
+    if (indexedImageCount === 0) return "no-indexed-images";
+    if (indexedImageCount < effectiveMinClusterSize) return "not-enough-images";
+    return "no-stable-clusters";
+  }, [indexedQuery.isSuccess, indexedImageCount, effectiveMinClusterSize]);
+
   const filteredMembers =
     selectedClusterQuery.data?.members.filter((member) =>
       member.filename.toLowerCase().includes(filterText.toLowerCase()),
@@ -240,30 +335,81 @@ export default function ClustersPage() {
         )}
 
         {data && data.clusters.length === 0 && (
-          <div className="frost-panel mx-auto max-w-md rounded-3xl px-8 py-14 text-center">
-            <Grid3x3 className="mx-auto mb-4 h-10 w-10 text-[color:var(--muted)]" />
-            <p className="mb-2 text-[color:var(--near-white)]">
-              No clusters yet
-            </p>
-            <p className="mb-6 text-sm leading-6 text-[color:var(--silver)]">
-              {clusteringUnavailableMessage ??
-                "Index a few related images, then run clustering."}
-            </p>
-            <button
-              type="button"
-              onClick={() => clusterMutation.mutate()}
-              disabled={isClusterButtonDisabled}
-              className="white-pill px-5 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
-              title={clusteringUnavailableMessage ?? undefined}
-            >
-              {isClusterActionBusy ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Play className="h-4 w-4" />
-              )}
-              {isClusterActionBusy ? "Clustering..." : "Run clustering"}
-            </button>
-          </div>
+          <>
+            {emptyStateVariant === "loading" && (
+              <div className="flex items-center justify-center py-32">
+                <Loader2 className="h-8 w-8 animate-spin text-[color:var(--silver)]" />
+              </div>
+            )}
+
+            {emptyStateVariant === "no-indexed-images" && (
+              <div className="frost-panel mx-auto max-w-md rounded-3xl px-8 py-14 text-center">
+                <ImageOff className="mx-auto mb-4 h-10 w-10 text-[color:var(--muted)]" />
+                <p className="mb-1 font-medium text-[color:var(--near-white)]">
+                  No indexed images yet
+                </p>
+                <p className="text-sm text-[color:var(--silver)]">
+                  Upload and index images before clustering.
+                </p>
+              </div>
+            )}
+
+            {emptyStateVariant === "not-enough-images" && (
+              <div className="frost-panel mx-auto max-w-md rounded-3xl px-8 py-14 text-center">
+                <ImageOff className="mx-auto mb-4 h-10 w-10 text-[color:var(--muted)]" />
+                <p className="mb-1 font-medium text-[color:var(--near-white)]">
+                  Not enough indexed images
+                </p>
+                <p className="mb-6 text-sm text-[color:var(--silver)]">
+                  Need at least {minClusterSize} indexed images before
+                  clustering. Found {indexedImageCount}.
+                </p>
+                <div
+                  className="mx-auto mb-2 h-1.5 w-full max-w-xs overflow-hidden rounded-full bg-[color:var(--frost)]"
+                  role="progressbar"
+                  aria-valuenow={indexedImageCount}
+                  aria-valuemin={0}
+                  aria-valuemax={minClusterSize}
+                  aria-label={`${indexedImageCount} of ${minClusterSize} images indexed`}
+                >
+                  <div
+                    className="h-full rounded-full bg-[color:var(--blue)] transition-all duration-500"
+                    style={{
+                      width: `${Math.min((indexedImageCount / minClusterSize) * 100, 100)}%`,
+                    }}
+                  />
+                </div>
+                <p className="text-xs text-[color:var(--muted)]">
+                  {indexedImageCount} / {minClusterSize} indexed
+                </p>
+              </div>
+            )}
+
+            {emptyStateVariant === "no-stable-clusters" && (
+              <div className="frost-panel mx-auto max-w-md rounded-3xl px-8 py-14 text-center">
+                <Grid3x3 className="mx-auto mb-4 h-10 w-10 text-[color:var(--muted)]" />
+                <p className="mb-1 font-medium text-[color:var(--near-white)]">
+                  No stable clusters found
+                </p>
+                <p className="mb-6 text-sm text-[color:var(--silver)]">
+                  Try indexing more visually similar images.
+                </p>
+                <button
+                  type="button"
+                  onClick={() => clusterMutation.mutate()}
+                  disabled={isClusterActionBusy}
+                  className="white-pill px-5 py-2.5 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  {isClusterActionBusy ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Play className="h-4 w-4" />
+                  )}
+                  {isClusterActionBusy ? "Clustering..." : "Run clustering"}
+                </button>
+              </div>
+            )}
+          </>
         )}
 
         {data && data.clusters.length > 0 && (
@@ -297,23 +443,26 @@ export default function ClustersPage() {
                     <div className="min-w-0">
                       <div className="mb-2 flex flex-wrap items-center gap-2">
                         <h2 className="text-lg font-medium text-[color:var(--near-white)]">
-                          Cluster {cluster.id}
+                          {getClusterDisplayName(cluster)}
                         </h2>
                         <span className="accent-badge status-default">
                           {cluster.member_count}{" "}
                           {cluster.member_count === 1 ? "image" : "images"}
                         </span>
                       </div>
-                      {cluster.label && (
-                        <p className="text-sm text-[color:var(--silver)]">
-                          {cluster.label}
+                      {(cluster.label?.trim() ||
+                        cluster.description?.trim()) && (
+                        <p className="text-xs uppercase text-[color:var(--muted)]">
+                          Cluster {cluster.id}
                         </p>
                       )}
-                      {cluster.description && (
-                        <p className="mt-1 line-clamp-2 text-sm leading-6 text-[color:var(--muted)]">
-                          {cluster.description}
-                        </p>
-                      )}
+                      {cluster.description &&
+                        cluster.label?.trim() &&
+                        cluster.description.trim() !== cluster.label.trim() && (
+                          <p className="mt-1 line-clamp-2 text-sm leading-6 text-[color:var(--muted)]">
+                            {cluster.description}
+                          </p>
+                        )}
                     </div>
 
                     <button
@@ -381,6 +530,11 @@ export default function ClustersPage() {
               onClick={() => {
                 setSelectedClusterId(null);
                 setFilterText("");
+                setClusterLabelDraft(
+                  selectedClusterQuery.data?.label ??
+                    selectedClusterQuery.data?.description ??
+                    "",
+                );
               }}
               className="icon-button absolute right-4 top-4 z-20 bg-[color:var(--overlay)] text-white backdrop-blur-md"
               aria-label="Close cluster detail"
@@ -390,8 +544,17 @@ export default function ClustersPage() {
 
             <div className="border-b border-[var(--frost)] px-6 py-5">
               <h2 className="text-xl font-medium text-[color:var(--near-white)]">
-                Cluster {selectedClusterId}
+                {selectedClusterQuery.data
+                  ? getClusterDisplayName(selectedClusterQuery.data)
+                  : `Cluster ${selectedClusterId}`}
               </h2>
+              {selectedClusterQuery.data &&
+                (selectedClusterQuery.data.label?.trim() ||
+                  selectedClusterQuery.data.description?.trim()) && (
+                  <p className="mt-1 text-xs uppercase text-[color:var(--muted)]">
+                    Cluster {selectedClusterId}
+                  </p>
+                )}
               <p className="mt-1 text-sm text-[color:var(--silver)]">
                 Images grouped by visual and semantic similarity.
               </p>
@@ -416,17 +579,49 @@ export default function ClustersPage() {
                     <span className="accent-badge status-default">
                       {selectedClusterQuery.data.member_count} members
                     </span>
-                    {selectedClusterQuery.data.label && (
-                      <span className="text-sm text-[color:var(--silver)]">
-                        {selectedClusterQuery.data.label}
-                      </span>
-                    )}
-                    {selectedClusterQuery.data.description && (
-                      <span className="text-sm text-[color:var(--muted)]">
-                        {selectedClusterQuery.data.description}
-                      </span>
-                    )}
+                    {selectedClusterQuery.data.description &&
+                      selectedClusterQuery.data.label?.trim() &&
+                      selectedClusterQuery.data.description.trim() !==
+                        selectedClusterQuery.data.label.trim() && (
+                        <span className="text-sm text-[color:var(--muted)]">
+                          {selectedClusterQuery.data.description}
+                        </span>
+                      )}
                   </div>
+                  <form
+                    className="mb-6 flex flex-col gap-2 sm:flex-row"
+                    onSubmit={(event) => {
+                      event.preventDefault();
+                      updateClusterMutation.mutate({
+                        clusterId: selectedClusterQuery.data.id,
+                        label: clusterLabelDraft,
+                      });
+                    }}
+                  >
+                    <input
+                      type="text"
+                      value={clusterLabelDraft}
+                      onChange={(event) =>
+                        setClusterLabelDraft(event.target.value)
+                      }
+                      placeholder={`Cluster ${selectedClusterQuery.data.id}`}
+                      aria-label="Cluster name"
+                      maxLength={255}
+                      className="min-w-0 flex-1 rounded-2xl border border-[var(--frost)] bg-[color:var(--surface-soft)] px-4 py-3 text-sm text-[color:var(--near-white)] outline-none transition focus:border-[#3b9eff]"
+                    />
+                    <button
+                      type="submit"
+                      disabled={updateClusterMutation.isPending}
+                      className="white-pill justify-center px-4 py-3 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {updateClusterMutation.isPending ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <Check className="h-4 w-4" />
+                      )}
+                      Save name
+                    </button>
+                  </form>
                   <div className="mb-6">
                     <input
                       type="text"

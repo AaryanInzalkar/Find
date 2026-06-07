@@ -35,6 +35,7 @@ export interface MediaItem {
   height?: number | null;
   file_size?: number | null;
   cluster_id?: number | null;
+  cluster_label?: string | null;
   url?: string | null;
   thumbnail_url?: string | null;
   caption?: string;
@@ -96,6 +97,37 @@ export interface GalleryResponse {
   limit: number;
 }
 
+export interface GalleryCounts {
+  all: number;
+  indexed: number;
+  processing: number;
+  failed: number;
+}
+
+export interface BulkDeleteResponse {
+  message: string;
+  deleted_ids: number[];
+  missing_ids: number[];
+  failed_ids: number[];
+  deleted_count: number;
+  missing_count: number;
+  failed_count: number;
+}
+
+export interface DuplicatePair {
+  duplicate_id: number;
+  duplicate_name: string;
+  original_id: number;
+  original_name: string;
+}
+
+export interface DuplicatesResponse {
+  total: number;
+  page: number;
+  limit: number;
+  items: DuplicatePair[];
+}
+
 export interface ClusterSample {
   id: number;
   filename: string;
@@ -135,6 +167,8 @@ export interface ClusterDetail {
   }>;
 }
 
+export type ClusterUpdateResponse = Omit<ClusterInfo, "samples">;
+
 export interface ClusteringJobResponse {
   message: string;
   job_id: string;
@@ -152,6 +186,10 @@ export interface SearchResponse {
   results: SearchResult[];
   total: number;
   query: string;
+  page: number;
+  limit: number;
+  skip: number;
+  has_more: boolean;
 }
 
 export interface JobStatus {
@@ -243,6 +281,17 @@ export const getGallery = async (
   return response.data;
 };
 
+export const getGalleryCounts = async (
+  params: { liked?: boolean } = {},
+): Promise<GalleryCounts> => {
+  const response = await api.get<GalleryCounts>("/api/gallery/counts", {
+    params: {
+      liked: params.liked,
+    },
+  });
+  return response.data;
+};
+
 export const getImageDetail = async (mediaId: number): Promise<MediaDetail> => {
   const response = await api.get<MediaDetail>(`/api/image/${mediaId}`);
   return response.data;
@@ -266,12 +315,50 @@ export const deleteImage = async (
   return response.data;
 };
 
+export const deleteImagesBulk = async (
+  mediaIds: number[],
+): Promise<BulkDeleteResponse> => {
+  const response = await api.post<BulkDeleteResponse>(
+    "/api/images/bulk-delete",
+    {
+      media_ids: mediaIds,
+    },
+  );
+  return response.data;
+};
+
+export const getDuplicates = async (
+  params: { page?: number; limit?: number } = {},
+): Promise<DuplicatesResponse> => {
+  const response = await api.get<DuplicatesResponse>("/api/duplicates", {
+    params: {
+      page: params.page ?? 1,
+      limit: params.limit ?? 20,
+    },
+  });
+  return response.data;
+};
+
+export const keepBothDuplicateImages = async (
+  mediaId: number,
+): Promise<{ status: "ok" }> => {
+  const response = await api.post<{ status: "ok" }>(
+    `/api/image/${mediaId}/keep`,
+  );
+  return response.data;
+};
+
 export const searchImages = async (params: {
   query: string;
   limit?: number;
+  skip?: number;
 }): Promise<SearchResponse> => {
   const response = await api.get<SearchResponse>("/api/search", {
-    params: { q: params.query, limit: params.limit || 20 },
+    params: {
+      q: params.query,
+      limit: params.limit || 24,
+      skip: params.skip || 0,
+    },
   });
   return response.data;
 };
@@ -300,6 +387,17 @@ export const getClusterDetail = async (
   clusterId: number,
 ): Promise<ClusterDetail> => {
   const response = await api.get<ClusterDetail>(`/api/cluster/${clusterId}`);
+  return response.data;
+};
+
+export const updateCluster = async (
+  clusterId: number,
+  payload: { label?: string | null },
+): Promise<ClusterUpdateResponse> => {
+  const response = await api.patch<ClusterUpdateResponse>(
+    `/api/cluster/${clusterId}`,
+    payload,
+  );
   return response.data;
 };
 

@@ -120,6 +120,11 @@ def migrate_db() -> None:
         command.upgrade(cfg, "head")
         logger.info("Alembic migrations applied.")
 
+        cfg = Config(
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "alembic.ini")
+        )
+        command.upgrade(cfg, "head")
+
     except Exception as e:
         logger.error(f"Migration failed: {e}")
         sys.exit(1)

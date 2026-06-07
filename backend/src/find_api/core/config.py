@@ -14,9 +14,9 @@ class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", case_sensitive=True)
 
     # API
+    ENVIRONMENT: Literal["local", "development", "staging", "production"] = "local"
     API_HOST: str = "0.0.0.0"
     API_PORT: int = 8000
-
     # Database
     DATABASE_URL: str = "postgresql://find:find123@localhost:5432/find"
 
