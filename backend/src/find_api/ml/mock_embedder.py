@@ -14,14 +14,23 @@ from find_api.core.config import settings
 class MockEmbedder:
     """Generate stable vectors without loading external ML models."""
 
-    def _safe_normalize(self, vector: np.ndarray) -> np.ndarray:
-        """Safely normalize vector avoiding NaN/inf issues."""
-        norm = np.linalg.norm(vector)
+def _safe_normalize(self, vector: np.ndarray) -> np.ndarray:
+    """Safely normalize vector avoiding NaN/inf issues."""
 
-        if norm is None or norm == 0 or not np.isfinite(norm):
-            return vector  # safe fallback: keep original vector
+    # Remove NaN and inf values first
+    clean_vector = np.nan_to_num(
+        vector,
+        nan=0.0,
+        posinf=0.0,
+        neginf=0.0,
+    )
 
-        return vector / norm
+    norm = np.linalg.norm(clean_vector)
+
+    if norm == 0 or not np.isfinite(norm):
+        return np.zeros_like(clean_vector, dtype=np.float32)
+
+    return (clean_vector / norm).astype(np.float32)
 
     def _vector_from_bytes(self, payload: bytes) -> np.ndarray:
         chunks = []
@@ -96,8 +105,8 @@ class MockEmbedder:
         text_parts = [
             part.strip()
             for part in [caption, object_text, ocr_text]
-            if part
-        ]
+            if part and part.strip()
+]
 
         if text_parts:
             text_vector = self.embed_text(" ".join(text_parts))
