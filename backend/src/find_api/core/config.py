@@ -62,6 +62,10 @@ class Settings(BaseSettings):
     SESSION_TTL_HOURS: int = 24
     INVITE_TTL_HOURS: int = 48
 
+    # Storage
+    STORAGE_BACKEND: Literal["minio", "local"] = "minio"
+    LOCAL_STORAGE_PATH: str = "./storage/uploads"
+
     @field_validator(
         "ML_MODEL_IDLE_TTL_SECONDS",
         "ML_MAX_LOADED_MODELS",
@@ -77,3 +81,5 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+

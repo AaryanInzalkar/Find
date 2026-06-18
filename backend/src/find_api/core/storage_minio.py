@@ -1,0 +1,245 @@
+"""
+MinIO storage backend implementation
+Implements StorageBackend interface for MinIO object storage
+"""
+
+import json
+from datetime import timedelta
+from urllib.parse import urlparse, urlunparse
+from io import BytesIO
+from minio import Minio
+from minio.error import S3Error
+from PIL import Image, ImageOps
+import logging
+
+from find_api.core.config import settings
+from find_api.core.storage_abstract import StorageBackend, StorageException
+
+logger = logging.getLogger(__name__)
+
+THUMBNAIL_MAX_SIZE = (256, 256)
+THUMBNAIL_CONTENT_TYPE = "image/webp"
+THUMBNAIL_EXTENSION = ".webp"
+THUMBNAIL_QUALITY = 78
+
+
+class MinIOStorageBackend(StorageBackend):
+    """MinIO storage backend implementation"""
+
+    def __init__(self):
+        """Initialize MinIO client"""
+        self.client = Minio(
+            settings.MINIO_ENDPOINT,
+            access_key=settings.MINIO_ACCESS_KEY,
+            secret_key=settings.MINIO_SECRET_KEY,
+            secure=settings.MINIO_SECURE,
+        )
+        self.bucket = settings.MINIO_BUCKET
+        self._public_client = self._get_public_client()
+
+    def _get_public_client(self) -> Minio | None:
+        """Get MinIO client for public endpoint if configured"""
+        if not settings.MINIO_PUBLIC_ENDPOINT:
+            return None
+
+        parsed = urlparse(settings.MINIO_PUBLIC_ENDPOINT.rstrip("/"))
+        if not parsed.netloc:
+            return None
+
+        return Minio(
+            parsed.netloc,
+            access_key=settings.MINIO_ACCESS_KEY,
+            secret_key=settings.MINIO_SECRET_KEY,
+            secure=parsed.scheme == "https",
+            region="us-east-1",
+        )
+
+    async def init_storage(self) -> None:
+        """Initialize MinIO storage - create bucket if not exists"""
+        try:
+            if not self.client.bucket_exists(self.bucket):
+                self.client.make_bucket(self.bucket)
+                logger.info(f"Created MinIO bucket: {self.bucket}")
+            else:
+                logger.info(f"MinIO bucket exists: {self.bucket}")
+
+            if settings.MINIO_PUBLIC_READ:
+                self._apply_public_read_policy()
+            else:
+                self._remove_public_read_policy()
+
+        except S3Error as e:
+            logger.error(f"Failed to initialize MinIO storage: {e}")
+            raise StorageException(f"MinIO initialization failed: {e}")
+
+    def _apply_public_read_policy(self) -> None:
+        """Apply public read policy to bucket"""
+        try:
+            policy = {
+                "Version": "2012-10-17",
+                "Statement": [
+                    {
+                        "Effect": "Allow",
+                        "Principal": {"AWS": ["*"]},
+                        "Action": ["s3:GetObject"],
+                        "Resource": [f"arn:aws:s3:::{self.bucket}/*"],
+                    }
+                ],
+            }
+            self.client.set_bucket_policy(self.bucket, json.dumps(policy))
+            logger.info(f"Applied public read policy to bucket '{self.bucket}'")
+        except S3Error as exc:
+            logger.warning(f"Failed to apply public read policy: {exc}")
+
+    def _remove_public_read_policy(self) -> None:
+        """Remove public read policy from bucket"""
+        try:
+            self.client.delete_bucket_policy(self.bucket)
+            logger.info(f"Removed public read policy from bucket '{self.bucket}'")
+        except S3Error as exc:
+            logger.warning(f"Failed to remove public read policy: {exc}")
+
+    async def upload_file(
+        self, file_data: bytes, object_name: str, content_type: str = "image/jpeg"
+    ) -> str:
+        """Upload file to MinIO"""
+        try:
+            self.client.put_object(
+                self.bucket,
+                object_name,
+                BytesIO(file_data),
+                length=len(file_data),
+                content_type=content_type,
+            )
+            logger.info(f"Uploaded file to MinIO: {object_name}")
+            return object_name
+        except S3Error as e:
+            logger.error(f"Failed to upload file to MinIO: {e}")
+            raise StorageException(f"MinIO upload failed: {e}")
+
+    async def get_file(self, object_name: str) -> bytes:
+        """Download file from MinIO"""
+        try:
+            response = self.client.get_object(self.bucket, object_name)
+            data = response.read()
+            response.close()
+            response.release_conn()
+            return data
+        except S3Error as e:
+            logger.error(f"Failed to download file from MinIO: {e}")
+            raise StorageException(f"MinIO download failed: {e}")
+
+    async def download_file_to_path(self, object_name: str, destination_path: str) -> None:
+        """Stream file from MinIO to local path"""
+        response = None
+        try:
+            response = self.client.get_object(self.bucket, object_name)
+            with open(destination_path, "wb") as destination:
+                for chunk in response.stream(1024 * 1024):
+                    if chunk:
+                        destination.write(chunk)
+        except S3Error as e:
+            logger.error(f"Failed to stream file from MinIO: {e}")
+            raise StorageException(f"MinIO stream failed: {e}")
+        finally:
+            if response is not None:
+                response.close()
+                response.release_conn()
+
+    async def get_file_url(self, object_name: str, expires: int = 3600) -> str:
+        """Get presigned or public URL for file"""
+        try:
+            if settings.MINIO_PUBLIC_READ and settings.MINIO_PUBLIC_ENDPOINT:
+                parsed = urlparse(settings.MINIO_PUBLIC_ENDPOINT.rstrip("/"))
+                object_path = object_name.lstrip("/")
+                base_path = parsed.path.rstrip("/")
+                if not base_path:
+                    public_path = f"/{self.bucket}/{object_path}"
+                else:
+                    public_path = f"{base_path}/{object_path}"
+
+                return urlunparse(
+                    (
+                        parsed.scheme,
+                        parsed.netloc,
+                        public_path,
+                        "",
+                        "",
+                        "",
+                    )
+                )
+
+            signing_client = self._public_client or self.client
+            return signing_client.presigned_get_object(
+                self.bucket, object_name, expires=timedelta(seconds=expires)
+            )
+        except S3Error as e:
+            logger.error(f"Failed to generate URL: {e}")
+            raise StorageException(f"URL generation failed: {e}")
+
+    async def delete_file(self, object_name: str) -> None:
+        """Delete file from MinIO"""
+        try:
+            self.client.remove_object(self.bucket, object_name)
+            logger.info(f"Deleted file from MinIO: {object_name}")
+        except S3Error as e:
+            logger.error(f"Failed to delete file from MinIO: {e}")
+            raise StorageException(f"MinIO deletion failed: {e}")
+
+    async def file_exists(self, object_name: str) -> bool:
+        """Check if file exists in MinIO"""
+        try:
+            self.client.stat_object(self.bucket, object_name)
+            return True
+        except S3Error as e:
+            if e.code == "NoSuchKey":
+                return False
+            logger.error(f"Failed to check file existence: {e}")
+            raise StorageException(f"File existence check failed: {e}")
+
+
+def generate_thumbnail(file_data: bytes) -> tuple[bytes, int, int]:
+    """Generate a small WEBP thumbnail from image bytes"""
+    with Image.open(BytesIO(file_data)) as image:
+        image = ImageOps.exif_transpose(image)
+        if image.mode not in {"RGB", "RGBA"}:
+            image = image.convert("RGBA" if "A" in image.getbands() else "RGB")
+
+        image.thumbnail(THUMBNAIL_MAX_SIZE, Image.Resampling.LANCZOS)
+
+        output = BytesIO()
+        image.save(
+            output,
+            format="WEBP",
+            quality=THUMBNAIL_QUALITY,
+            method=4,
+        )
+        thumbnail_data = output.getvalue()
+
+    return thumbnail_data, image.width, image.height
+
+
+async def upload_thumbnail(
+    backend: StorageBackend, file_data: bytes, file_hash: str
+) -> dict | None:
+    """Generate and upload a thumbnail for an image"""
+    thumbnail_key = f"thumbnails/{file_hash[:2]}/{file_hash}{THUMBNAIL_EXTENSION}"
+
+    try:
+        thumbnail_data, width, height = generate_thumbnail(file_data)
+        await backend.upload_file(thumbnail_data, thumbnail_key, THUMBNAIL_CONTENT_TYPE)
+    except Exception as exc:
+        logger.warning(
+            "Failed to generate thumbnail for image hash %s: %s",
+            file_hash,
+            exc,
+        )
+        return None
+
+    return {
+        "thumbnail_key": thumbnail_key,
+        "thumbnail_content_type": THUMBNAIL_CONTENT_TYPE,
+        "thumbnail_size": len(thumbnail_data),
+        "thumbnail_width": width,
+        "thumbnail_height": height,
+    }
