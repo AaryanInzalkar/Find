@@ -46,7 +46,7 @@ def _signature_result(token: str = "1:2026-01-01T00:00:00+00:00") -> MagicMock:
     return result
 
 
-def _mock_search(client, fake_rows, *, params=None, total_count=None):
+def _mock_search(client, fake_rows, *, params=None, total_count=None, return_db=False):
     """Call /api/search with mocked embeddings and paginated DB responses."""
     mock_embedder = MagicMock()
     mock_embedder.embed_text.return_value = [0.0] * 768
@@ -75,7 +75,12 @@ def _mock_search(client, fake_rows, *, params=None, total_count=None):
                 return_value=mock_embedder,
             ),
         ):
-            return client.get("/api/search", params={"q": "sunset", **(params or {})})
+            response = client.get(
+                "/api/search", params={"q": "sunset", **(params or {})}
+            )
+            if return_db:
+                return response, mock_db
+            return response
     finally:
         app.dependency_overrides.pop(get_db, None)
 
@@ -304,6 +309,63 @@ class TestSearchResponseShape:
         include_meta = include_response.json()["results"][0]["metadata"]
         assert "ocr_text" not in default_meta
         assert include_meta["ocr_text"] == "total 42.00"
+
+    def test_search_accepts_metadata_filter_params(self, client):
+        response, mock_db = _mock_search(
+            client,
+            [_fake_search_row()],
+            params={
+                "camera_make": "Canon",
+                "camera_model": "EOS",
+                "date_from": "2026-01-01",
+                "date_to": "2026-12-31",
+                "min_width": 1000,
+                "min_height": 700,
+                "orientation": "landscape",
+                "file_type": "jpg",
+            },
+            return_db=True,
+        )
+
+        assert response.status_code == 200
+        count_sql = str(mock_db.execute.call_args_list[1].args[0])
+        search_sql = str(mock_db.execute.call_args_list[2].args[0])
+        search_params = mock_db.execute.call_args_list[2].args[1]
+
+        assert "exif_json ->> 'make' ILIKE :camera_make_pattern" in count_sql
+        assert "exif_json ->> 'model' ILIKE :camera_model_pattern" in search_sql
+        assert "created_at >= :date_from" in search_sql
+        assert "created_at <= :date_to" in search_sql
+        assert "width >= :min_width" in search_sql
+        assert "height >= :min_height" in search_sql
+        assert "width > height" in search_sql
+        assert "content_type ILIKE :file_type_pattern" in search_sql
+        assert search_params["camera_make_pattern"] == "%Canon%"
+        assert search_params["camera_model_pattern"] == "%EOS%"
+        assert search_params["min_width"] == 1000
+        assert search_params["min_height"] == 700
+        assert search_params["file_type_pattern"] == "%jpg%"
+
+    def test_search_rejects_invalid_metadata_filter_values(self, client):
+        invalid_date = _mock_search(
+            client,
+            [],
+            params={"date_from": "not-a-date"},
+        )
+        invalid_range = _mock_search(
+            client,
+            [],
+            params={"date_from": "2026-03-01", "date_to": "2026-02-01"},
+        )
+        invalid_orientation = _mock_search(
+            client,
+            [],
+            params={"orientation": "diagonal"},
+        )
+
+        assert invalid_date.status_code == 422
+        assert invalid_range.status_code == 422
+        assert invalid_orientation.status_code == 422
 
 
 class TestSearchDiagnostics:

@@ -497,6 +497,57 @@ class TestGalleryMetadataFilters:
         assert body["total"] == 1
         assert body["items"][0]["filename"] == "graphic.png"
 
+    def test_gallery_filters_by_date_range(self, client, db):
+        older = _seed(db, filename="older.jpg", status="indexed")
+        newer = _seed(db, filename="newer.jpg", status="indexed")
+        older.created_at = datetime(2026, 1, 10, tzinfo=timezone.utc)
+        newer.created_at = datetime(2026, 2, 10, tzinfo=timezone.utc)
+        db.commit()
+
+        response = client.get(
+            "/api/gallery",
+            params={"date_from": "2026-02-01", "date_to": "2026-02-28"},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total"] == 1
+        assert body["items"][0]["filename"] == "newer.jpg"
+
+    def test_gallery_filters_by_orientation(self, client, db):
+        landscape = _seed(db, filename="landscape.jpg", status="indexed")
+        portrait = _seed(db, filename="portrait.jpg", status="indexed")
+        square = _seed(db, filename="square.jpg", status="indexed")
+        landscape.width = 1600
+        landscape.height = 900
+        portrait.width = 900
+        portrait.height = 1600
+        square.width = 1200
+        square.height = 1200
+        db.commit()
+
+        response = client.get("/api/gallery", params={"orientation": "portrait"})
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total"] == 1
+        assert body["items"][0]["filename"] == "portrait.jpg"
+
+    def test_gallery_rejects_invalid_metadata_filter_values(self, client):
+        invalid_date = client.get("/api/gallery", params={"date_from": "not-a-date"})
+        invalid_range = client.get(
+            "/api/gallery",
+            params={"date_from": "2026-03-01", "date_to": "2026-02-01"},
+        )
+        invalid_orientation = client.get(
+            "/api/gallery",
+            params={"orientation": "diagonal"},
+        )
+
+        assert invalid_date.status_code == 422
+        assert invalid_range.status_code == 422
+        assert invalid_orientation.status_code == 422
+
     def test_gallery_filter_excludes_missing_exif_data(self, client, db):
         with_exif = _seed(db, filename="canon.jpg", status="indexed")
         without_exif = _seed(db, filename="no-exif.jpg", status="indexed")

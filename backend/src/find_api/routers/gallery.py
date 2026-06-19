@@ -4,6 +4,7 @@ Gallery endpoint for browsing images
 
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 GalleryStatus = Literal["pending", "processing", "indexed", "failed"]
+OrientationFilter = Literal["landscape", "portrait", "square"]
 
 
 class BulkDeleteRequest(BaseModel):
@@ -72,6 +74,66 @@ def normalize_metadata(value):
     return {}
 
 
+def parse_metadata_date(value: str | None, field_name: str) -> datetime | None:
+    """Parse an ISO date/datetime query param into a timezone-aware datetime."""
+    if not value:
+        return None
+
+    raw_value = value.strip()
+    if not raw_value:
+        return None
+
+    try:
+        parsed = datetime.fromisoformat(raw_value.replace("Z", "+00:00"))
+    except ValueError as exc:
+        raise HTTPException(422, f"{field_name} must be a valid ISO date") from exc
+
+    if parsed.tzinfo is None:
+        parsed = parsed.replace(tzinfo=timezone.utc)
+    return parsed
+
+
+def apply_metadata_filters(
+    query,
+    *,
+    camera_make: str | None = None,
+    camera_model: str | None = None,
+    min_width: int | None = None,
+    min_height: int | None = None,
+    file_type: str | None = None,
+    date_from: datetime | None = None,
+    date_to: datetime | None = None,
+    orientation: OrientationFilter | None = None,
+):
+    """Apply shared metadata filters to a SQLAlchemy media query."""
+    if camera_make:
+        query = query.filter(
+            Media.exif_json["make"].as_string().ilike(f"%{camera_make.strip()}%")
+        )
+    if camera_model:
+        query = query.filter(
+            Media.exif_json["model"].as_string().ilike(f"%{camera_model.strip()}%")
+        )
+    if date_from is not None:
+        query = query.filter(Media.created_at >= date_from)
+    if date_to is not None:
+        query = query.filter(Media.created_at <= date_to)
+    if min_width is not None:
+        query = query.filter(Media.width >= min_width)
+    if min_height is not None:
+        query = query.filter(Media.height >= min_height)
+    if orientation == "landscape":
+        query = query.filter(Media.width > Media.height)
+    elif orientation == "portrait":
+        query = query.filter(Media.height > Media.width)
+    elif orientation == "square":
+        query = query.filter(Media.width == Media.height)
+    if file_type:
+        normalized_type = file_type.strip().lower().lstrip(".")
+        query = query.filter(Media.content_type.ilike(f"%{normalized_type}%"))
+    return query
+
+
 @router.get("/gallery/counts", response_model=GalleryCountsResponse)
 def get_gallery_counts(
     liked: Optional[bool] = None,
@@ -109,6 +171,18 @@ def get_gallery(
         max_length=20,
         description="Filter by image file type",
     ),
+    date_from: Optional[str] = Query(
+        None,
+        description="Filter to media uploaded on or after this ISO date",
+    ),
+    date_to: Optional[str] = Query(
+        None,
+        description="Filter to media uploaded on or before this ISO date",
+    ),
+    orientation: Optional[OrientationFilter] = Query(
+        None,
+        description="Filter by image orientation",
+    ),
     db: Session = Depends(get_db),
 ):
     """
@@ -129,21 +203,26 @@ def get_gallery(
         query = query.filter(Media.status == status)
     if liked is not None:
         query = query.filter(Media.liked == liked)
-    if camera_make:
-        query = query.filter(
-            Media.exif_json["make"].as_string().ilike(f"%{camera_make}%")
-        )
-    if camera_model:
-        query = query.filter(
-            Media.exif_json["model"].as_string().ilike(f"%{camera_model}%")
-        )
-    if min_width is not None:
-        query = query.filter(Media.width >= min_width)
-    if min_height is not None:
-        query = query.filter(Media.height >= min_height)
-    if file_type:
-        normalized_type = file_type.lower().lstrip(".")
-        query = query.filter(Media.content_type.ilike(f"%{normalized_type}%"))
+    parsed_date_from = parse_metadata_date(date_from, "date_from")
+    parsed_date_to = parse_metadata_date(date_to, "date_to")
+    if (
+        parsed_date_from is not None
+        and parsed_date_to is not None
+        and parsed_date_from > parsed_date_to
+    ):
+        raise HTTPException(422, "date_from must be before or equal to date_to")
+
+    query = apply_metadata_filters(
+        query,
+        camera_make=camera_make,
+        camera_model=camera_model,
+        min_width=min_width,
+        min_height=min_height,
+        file_type=file_type,
+        date_from=parsed_date_from,
+        date_to=parsed_date_to,
+        orientation=orientation,
+    )
 
     # Get total count
     total = query.count()
