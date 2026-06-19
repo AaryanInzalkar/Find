@@ -58,7 +58,16 @@ class Settings(BaseSettings):
     CLUSTERING_N_JOBS: int = -1
     CLUSTERING_BACKEND: str = "auto"
 
-    @field_validator("ML_MODEL_IDLE_TTL_SECONDS", "ML_MAX_LOADED_MODELS")
+    # Auth (small-team instance sharing)
+    SESSION_TTL_HOURS: int = 24
+    INVITE_TTL_HOURS: int = 48
+
+    @field_validator(
+        "ML_MODEL_IDLE_TTL_SECONDS",
+        "ML_MAX_LOADED_MODELS",
+        "SESSION_TTL_HOURS",
+        "INVITE_TTL_HOURS",
+    )
     @classmethod
     def validate_positive_int(cls, value: int, info):
         """Keep memory lifecycle settings positive so cleanup cannot be disabled accidentally."""
