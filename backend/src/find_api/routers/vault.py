@@ -35,6 +35,8 @@ from find_api.models.media import Media
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
+ENCRYPTION_ALGORITHM = "AES-256-GCM"
+KEY_DERIVATION_METHOD = "PBKDF2-HMAC-SHA256"
 
 
 class VaultUnlockRequest(BaseModel):
@@ -297,8 +299,8 @@ def hide_media(
                     "media_id": media.id,
                     "encrypted_path": str(encrypted_path),
                     "iv": iv,
-                    "encryption_algorithm": "AES-256-GCM",
-                    "key_derivation": "PBKDF2-HMAC-SHA256",
+                    "encryption_algorithm": ENCRYPTION_ALGORITHM,
+                    "key_derivation": KEY_DERIVATION_METHOD,
                     "ciphertext_size": encrypted_path.stat().st_size,
                 },
             )

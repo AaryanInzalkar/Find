@@ -8,6 +8,10 @@ from find_api.models.face import Face
 from find_api.models.person import Person
 from find_api.models.feedback import PersonFeedback, GeneralFeedback
 from find_api.models.vault import VaultConfig, VaultMetadata
+from find_api.models.user import User
+from find_api.models.session import AuthSession
+from find_api.models.invite import InviteToken
+from find_api.models.join_request import JoinRequest
 
 __all__ = [
     "Media",
@@ -18,4 +22,8 @@ __all__ = [
     "GeneralFeedback",
     "VaultConfig",
     "VaultMetadata",
+    "User",
+    "AuthSession",
+    "InviteToken",
+    "JoinRequest",
 ]
