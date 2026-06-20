@@ -60,13 +60,18 @@ def get_redis_connection():
     return _get_backend.redis_conn
 
 
-def get_task_queue():
+def get_task_queue(name: str = DEFAULT_QUEUE_NAME):
     """Return a queue-like object with an ``enqueue`` method.
 
     In Redis mode returns an ``rq.Queue``; in SQLite mode returns a
     ``SqliteQueue``.
     """
-    return _get_backend()
+    if settings.QUEUE_MODE == "sqlite":
+        return _get_backend()
+
+    from rq import Queue
+
+    return Queue(name, connection=get_redis_connection())
 
 
 RQ_CONTROL_KWARGS = frozenset(
