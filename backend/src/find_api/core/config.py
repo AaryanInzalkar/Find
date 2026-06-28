@@ -132,5 +132,35 @@ class Settings(BaseSettings):
 
         return self
 
+    @model_validator(mode="after")
+    def reject_default_secrets_in_production(self):
+        """Fail closed when known-default credentials are used in production.
+
+        These defaults are convenient for local development but are publicly
+        known, so a production deployment that forgets to override them would
+        ship with guessable database/object-store credentials.
+
+        Runs after :meth:`apply_storage_aliases` so it checks the effective
+        credentials (STORAGE_* values already copied onto MINIO_*).
+        """
+        if self.ENVIRONMENT.lower() != "production":
+            return self
+
+        insecure: list[str] = []
+        if "find123" in self.DATABASE_URL:
+            insecure.append("DATABASE_URL (default password)")
+        if self.MINIO_ACCESS_KEY == "minioadmin":
+            insecure.append("MINIO_ACCESS_KEY/STORAGE_ACCESS_KEY")
+        if self.MINIO_SECRET_KEY == "minioadmin":
+            insecure.append("MINIO_SECRET_KEY/STORAGE_SECRET_KEY")
+
+        if insecure:
+            raise ValueError(
+                "Refusing to start in production with default credentials: "
+                + ", ".join(insecure)
+                + ". Set strong, unique values for these via environment variables."
+            )
+        return self
+
 
 settings = Settings()

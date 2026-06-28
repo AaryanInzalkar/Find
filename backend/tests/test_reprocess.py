@@ -97,6 +97,11 @@ gallery_module.Media = FakeMedia  # type: ignore[assignment]
 test_app = FastAPI()
 test_app.include_router(gallery_module.router, prefix="/api")
 test_app.dependency_overrides[get_db] = get_test_db
+# Gallery endpoints now depend on get_required_user; this minimal test app
+# has no users table, so force local (single-user) mode by returning None.
+from find_api.core.dependencies import get_required_user  # noqa: E402
+
+test_app.dependency_overrides[get_required_user] = lambda: None
 
 
 @pytest.fixture(autouse=True)

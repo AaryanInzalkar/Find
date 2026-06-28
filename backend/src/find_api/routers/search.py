@@ -12,6 +12,8 @@ from sqlalchemy.orm import Session
 
 from find_api.core.config import settings
 from find_api.core.database import get_db
+from find_api.core.dependencies import get_required_user
+from find_api.models.user import User
 from find_api.ml.search_ranking import (
     bound_similarity,
     compute_textual_boost,
@@ -22,6 +24,7 @@ from find_api.ml.search_ranking import (
 from find_api.core.storage import get_file_url
 from find_api.routers.gallery import build_thumbnail_url
 from find_api.services.query_cache import get_cached_query, set_cached_query
+from typing import Optional
 
 router = APIRouter()
 
@@ -58,6 +61,7 @@ def search_images(
     ),
     debug: bool = Query(False, description="Include retrieval diagnostics in response"),
     db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_required_user),
 ):
     """
     Semantic search for images using natural language with pagination support.
@@ -73,15 +77,25 @@ def search_images(
     """
     t_total_start = time.perf_counter()
 
+    # Restrict results to the caller's own media in shared mode (IDOR guard).
+    # Local mode (user is None) and admins are unrestricted.
+    scope_user_id = user.id if (user is not None and user.role != "admin") else None
+    scope_clause = (
+        " AND uploader_user_id = :scope_user_id" if scope_user_id is not None else ""
+    )
+
     # Keep debug requests uncached so timing diagnostics describe the actual path.
     index_signature = None
     if not debug:
         index_signature = _search_index_signature(db)
+        # Partition the cache by scope so one user cannot read another's
+        # cached results in shared mode.
+        scoped_signature = f"{index_signature}:scope={scope_user_id}"
         cached = get_cached_query(
             q,
             limit,
             skip,
-            index_signature,
+            scoped_signature,
             include_ocr=include_ocr,
         )
         if cached is not None:
@@ -115,22 +129,24 @@ def search_images(
 
     # First get total count of matching results
     count_query = text(
-        """
+        f"""
         SELECT COUNT(*) as total
         FROM media
         WHERE status = 'indexed' AND vector IS NOT NULL
         AND is_hidden = false
         AND 1 - (vector <=> CAST(:embedding AS vector)) > :threshold
+        {scope_clause}
     """
     )
-    count_result = db.execute(
-        count_query, {"embedding": embedding_str, "threshold": threshold}
-    )
+    count_params = {"embedding": embedding_str, "threshold": threshold}
+    if scope_user_id is not None:
+        count_params["scope_user_id"] = scope_user_id
+    count_result = db.execute(count_query, count_params)
     total_count = count_result.scalar() or 0
 
     # Get paginated results
     query_sql = text(
-        """
+        f"""
         WITH ranked_results AS (
             SELECT
                 id,
@@ -157,6 +173,7 @@ def search_images(
                 ) as final_score
             FROM media
             WHERE status = 'indexed' AND vector IS NOT NULL
+            {scope_clause}
         )
         SELECT * FROM ranked_results
         WHERE similarity > :threshold AND is_hidden = false
@@ -166,15 +183,15 @@ def search_images(
     )
 
     t_retrieval_start = time.perf_counter()
-    result = db.execute(
-        query_sql,
-        {
-            "embedding": embedding_str,
-            "limit": limit,
-            "skip": skip,
-            "threshold": threshold,
-        },
-    )
+    query_params = {
+        "embedding": embedding_str,
+        "limit": limit,
+        "skip": skip,
+        "threshold": threshold,
+    }
+    if scope_user_id is not None:
+        query_params["scope_user_id"] = scope_user_id
+    result = db.execute(query_sql, query_params)
     retrieval_ms = (time.perf_counter() - t_retrieval_start) * 1000
 
     # Build response
@@ -285,7 +302,7 @@ def search_images(
             q,
             limit,
             skip,
-            index_signature or "",
+            f"{index_signature or ''}:scope={scope_user_id}",
             query_embedding,
             response,
             include_ocr=include_ocr,
