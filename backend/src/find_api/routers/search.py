@@ -126,6 +126,7 @@ def _search_index_signature(db: Session) -> str:
             SELECT COUNT(*) AS indexed_count, MAX(processed_at) AS max_processed_at
             FROM media
             WHERE status = 'indexed' AND vector IS NOT NULL AND is_hidden = false
+            AND is_archived = false AND deleted_at IS NULL
         """
         )
     )
@@ -260,6 +261,7 @@ def search_images(
         FROM media
         WHERE status = 'indexed' AND vector IS NOT NULL
         AND is_hidden = false
+        AND is_archived = false AND deleted_at IS NULL
         {metadata_filter_sql}
         AND 1 - (vector <=> CAST(:embedding AS vector)) > :threshold
         {scope_clause}
@@ -304,6 +306,7 @@ def search_images(
                 ) as final_score
             FROM media
             WHERE status = 'indexed' AND vector IS NOT NULL
+            AND is_archived = false AND deleted_at IS NULL
             {metadata_filter_sql}
             {scope_clause}
         )

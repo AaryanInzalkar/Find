@@ -9,9 +9,11 @@ import {
 } from "@tanstack/react-query";
 import axios from "axios";
 import {
+  Archive,
   Check,
   Download,
   Eye,
+  FolderPlus,
   Heart,
   ImageOff,
   Lock,
@@ -24,6 +26,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useCallback, useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
+import { AddToAlbumModal } from "@/components/add-to-album-modal";
 import { GalleryDateFilter } from "@/components/gallery-date-filter";
 import {
   ImagePreviewModal,
@@ -43,7 +46,9 @@ import {
   getImageDetail,
   reprocessImage,
   type SortOrder,
+  setArchive,
   toggleLike,
+  trashImage,
 } from "@/lib/api";
 import {
   MINIO_URL_REFRESH_INTERVAL_MS,
@@ -367,6 +372,7 @@ function GalleryPageContent() {
     filename?: string;
   } | null>(null);
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [addToAlbumOpen, setAddToAlbumOpen] = useState(false);
   const [deletionError, setDeletionError] = useState<string | null>(null);
   const [hasOpenedFromQuery, setHasOpenedFromQuery] = useState(false);
   const [querySelectedItem, setQuerySelectedItem] =
@@ -813,6 +819,72 @@ function GalleryPageContent() {
     },
   });
 
+  const bulkArchiveMutation = useMutation({
+    mutationFn: (mediaIds: number[]) =>
+      Promise.all(mediaIds.map((id) => setArchive(id, true))),
+    onMutate: (mediaIds: number[]) => {
+      const previousData =
+        queryClient.getQueryData<InfiniteData<GalleryResponse>>(
+          galleryQueryKey,
+        );
+      queryClient.setQueryData<InfiniteData<GalleryResponse>>(
+        galleryQueryKey,
+        (old) => removeMediaFromGalleryCache(mediaIds, old),
+      );
+      return { previousData };
+    },
+    onError: (_e, _v, context) => {
+      if (context?.previousData) {
+        queryClient.setQueryData(galleryQueryKey, context.previousData);
+      }
+      toast.error("Couldn't archive selected images.");
+    },
+    onSuccess: (result) => {
+      toast.success(
+        `Archived ${result.length} image${result.length === 1 ? "" : "s"}.`,
+      );
+      handleClearSelection();
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["gallery-infinite"] });
+      queryClient.invalidateQueries({ queryKey: ["gallery-counts"] });
+      queryClient.invalidateQueries({ queryKey: ["archive"] });
+    },
+  });
+
+  const bulkTrashMutation = useMutation({
+    mutationFn: (mediaIds: number[]) =>
+      Promise.all(mediaIds.map((id) => trashImage(id))),
+    onMutate: (mediaIds: number[]) => {
+      const previousData =
+        queryClient.getQueryData<InfiniteData<GalleryResponse>>(
+          galleryQueryKey,
+        );
+      queryClient.setQueryData<InfiniteData<GalleryResponse>>(
+        galleryQueryKey,
+        (old) => removeMediaFromGalleryCache(mediaIds, old),
+      );
+      return { previousData };
+    },
+    onError: (_e, _v, context) => {
+      if (context?.previousData) {
+        queryClient.setQueryData(galleryQueryKey, context.previousData);
+      }
+      toast.error("Couldn't move selected images to trash.");
+    },
+    onSuccess: (result) => {
+      toast.success(
+        `Moved ${result.length} image${result.length === 1 ? "" : "s"} to trash.`,
+      );
+      handleClearSelection();
+    },
+    onSettled: () => {
+      queryClient.invalidateQueries({ queryKey: ["gallery-infinite"] });
+      queryClient.invalidateQueries({ queryKey: ["gallery-counts"] });
+      queryClient.invalidateQueries({ queryKey: ["trash"] });
+    },
+  });
+
   const reprocessMutation = useMutation({
     mutationFn: (mediaId: number) => reprocessImage(mediaId),
     onSuccess: ({ media_id }) => {
@@ -1201,6 +1273,39 @@ function GalleryPageContent() {
                   </span>
                   <button
                     type="button"
+                    data-testid="add-selected-to-album"
+                    onClick={() => setAddToAlbumOpen(true)}
+                    className="inline-flex items-center gap-2 rounded-full border border-[var(--frost)] bg-[color:var(--frost-soft)] px-4 py-2 text-xs font-semibold transition hover:bg-[var(--frost)]"
+                  >
+                    <FolderPlus className="h-3.5 w-3.5" />
+                    Add to album
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="archive-selected"
+                    onClick={() =>
+                      bulkArchiveMutation.mutate(Array.from(selectedIds))
+                    }
+                    disabled={bulkArchiveMutation.isPending}
+                    className="inline-flex items-center gap-2 rounded-full border border-[var(--frost)] bg-[color:var(--frost-soft)] px-4 py-2 text-xs font-semibold transition hover:bg-[var(--frost)] disabled:opacity-50"
+                  >
+                    <Archive className="h-3.5 w-3.5" />
+                    Archive
+                  </button>
+                  <button
+                    type="button"
+                    data-testid="trash-selected"
+                    onClick={() =>
+                      bulkTrashMutation.mutate(Array.from(selectedIds))
+                    }
+                    disabled={bulkTrashMutation.isPending}
+                    className="inline-flex items-center gap-2 rounded-full border border-[var(--frost)] bg-[color:var(--frost-soft)] px-4 py-2 text-xs font-semibold transition hover:bg-[var(--frost)] disabled:opacity-50"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                    Move to trash
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => setBulkDeleteOpen(true)}
                     disabled={
                       deleteMutation.isPending || bulkDeleteMutation.isPending
@@ -1449,6 +1554,14 @@ function GalleryPageContent() {
               setQuerySelectedItem(null);
             }
           }}
+        />
+      )}
+
+      {addToAlbumOpen && selectedCount > 0 && (
+        <AddToAlbumModal
+          mediaIds={Array.from(selectedIds)}
+          onClose={() => setAddToAlbumOpen(false)}
+          onAdded={() => handleClearSelection()}
         />
       )}
 

@@ -12,6 +12,10 @@ from find_api.models.user import User
 from find_api.models.session import AuthSession
 from find_api.models.invite import InviteToken
 from find_api.models.join_request import JoinRequest
+from find_api.models.album import Album, AlbumAsset
+from find_api.models.shared_link import SharedLink
+from find_api.models.app_setting import AppSetting
+from find_api.models.partner_share import PartnerShare
 
 __all__ = [
     "Media",
@@ -26,4 +30,9 @@ __all__ = [
     "AuthSession",
     "InviteToken",
     "JoinRequest",
+    "Album",
+    "AlbumAsset",
+    "SharedLink",
+    "AppSetting",
+    "PartnerShare",
 ]

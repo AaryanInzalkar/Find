@@ -10,6 +10,7 @@ from typing import Union
 import logging
 
 from find_api.core.config import settings
+from find_api.core.hardware import current_torch_device
 from find_api.core.model_manager import get_model_manager
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,7 @@ class ImageCaptioner:
         model_id = settings.BLIP_MODEL
         logger.info("Loading Florence-2 model: %s", model_id)
 
-        device = "cuda" if settings.USE_GPU and torch.cuda.is_available() else "cpu"
+        device = current_torch_device()
         torch_dtype = torch.float16 if device == "cuda" else torch.float32
 
         model = AutoModelForCausalLM.from_pretrained(
@@ -62,7 +63,7 @@ class ImageCaptioner:
             if image.mode != "RGB":
                 image = image.convert("RGB")
 
-            config_key = f"model={settings.BLIP_MODEL}|gpu={settings.USE_GPU}"
+            config_key = f"model={settings.BLIP_MODEL}|accel={settings.ACCEL_MODE}"
             with self.manager.use_model(
                 "florence-2", self._load_model, config_key=config_key
             ) as bundle:
@@ -126,7 +127,7 @@ class ImageCaptioner:
             if image.mode != "RGB":
                 image = image.convert("RGB")
 
-            config_key = f"model={settings.BLIP_MODEL}|gpu={settings.USE_GPU}"
+            config_key = f"model={settings.BLIP_MODEL}|accel={settings.ACCEL_MODE}"
             with self.manager.use_model(
                 "florence-2", self._load_model, config_key=config_key
             ) as bundle:

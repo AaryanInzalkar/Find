@@ -28,9 +28,13 @@ from find_api.routers import (
     people,
     search,
     status,
+    timeline,
     upload,
     vault,
 )
+from find_api.routers import album
+from find_api.routers import shared_link
+from find_api.routers import partner
 
 # Configure logging
 logging.basicConfig(
@@ -130,6 +134,10 @@ if settings.STORAGE_BACKEND.lower() == "local":
 app.include_router(auth.router, prefix="/api", tags=["auth"])
 app.include_router(upload.router, prefix="/api", tags=["upload"])
 app.include_router(gallery.router, prefix="/api", tags=["gallery"])
+app.include_router(timeline.router, prefix="/api", tags=["timeline"])
+app.include_router(album.router, prefix="/api", tags=["albums"])
+app.include_router(shared_link.router, prefix="/api", tags=["shared-links"])
+app.include_router(partner.router, prefix="/api", tags=["partners"])
 app.include_router(search.router, prefix="/api", tags=["search"])
 app.include_router(clusters.router, prefix="/api", tags=["clusters"])
 app.include_router(cluster.router, prefix="/api", tags=["cluster-ops"])

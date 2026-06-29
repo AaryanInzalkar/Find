@@ -65,6 +65,12 @@ class GalleryCountsResponse(BaseModel):
     failed: int
 
 
+class ArchiveRequest(BaseModel):
+    """Request body for setting an asset's archive state."""
+
+    archived: bool = True
+
+
 def build_thumbnail_url(media_id: int) -> str:
     """Return the API route that serves the best available thumbnail."""
     return f"/api/image/{media_id}/thumbnail"
@@ -190,8 +196,74 @@ def parse_metadata_date(value: str | None, field_name: str) -> datetime | None:
 
 
 def _public_media_query(db: Session):
-    """Return media rows visible through public gallery/image routes."""
+    """Return media rows visible through public gallery/image routes.
+
+    Filters only the vault ``is_hidden`` flag. Use for single-item lookups
+    and for views (archive/trash) that intentionally surface archived or
+    trashed assets. List/browse surfaces should use
+    :func:`_browsable_media_query` instead.
+    """
     return db.query(Media).filter(Media.is_hidden.is_(False))
+
+
+def _browsable_media_query(db: Session):
+    """Return media rows that belong in the main timeline/browse surfaces.
+
+    Adds the asset-state scoping rule on top of the vault filter: an asset
+    is browsable iff it is not hidden, not archived, and not trashed
+    (``deleted_at IS NULL``). The dedicated archive/trash views must NOT use
+    this helper — they filter on those columns directly.
+    """
+    return _public_media_query(db).filter(
+        Media.is_archived.is_(False),
+        Media.deleted_at.is_(None),
+    )
+
+
+def _serialize_media_item(media: Media) -> dict:
+    """Build a gallery list item dict for one media row.
+
+    Shared by the main gallery list and the archive/trash list views so the
+    item shape stays consistent across surfaces.
+    """
+    item = {
+        "id": media.id,
+        "filename": media.filename,
+        "status": media.status,
+        "created_at": media.created_at.isoformat() if media.created_at else None,
+        "processed_at": (
+            media.processed_at.isoformat() if media.processed_at else None
+        ),
+        "width": media.width,
+        "height": media.height,
+        "file_size": media.file_size,
+        "cluster_id": media.cluster_id,
+        "minio_key": media.minio_key,
+        "thumbnail_key": media.thumbnail_key,
+        "thumbnail_content_type": media.thumbnail_content_type,
+        "thumbnail_size": media.thumbnail_size,
+        "thumbnail_width": media.thumbnail_width,
+        "thumbnail_height": media.thumbnail_height,
+        "liked": media.liked,
+        "is_archived": media.is_archived,
+        "deleted_at": media.deleted_at.isoformat() if media.deleted_at else None,
+    }
+
+    # Add original and thumbnail URLs separately.
+    try:
+        item["url"] = get_file_url(media.minio_key)
+    except Exception:
+        item["url"] = None
+    item["thumbnail_url"] = build_thumbnail_url(media.id)
+
+    # Add metadata if indexed
+    metadata = normalize_metadata(media.metadata_json)
+    if media.status == "indexed" and metadata:
+        item["caption"] = metadata.get("caption", "")
+        item["objects"] = metadata.get("objects", [])
+        item["has_text"] = bool(metadata.get("ocr_text", ""))
+
+    return item
 
 
 def _load_public_media_or_404(db: Session, media_id: int) -> Media:
@@ -264,7 +336,7 @@ def get_gallery_counts(
     db: Session = Depends(get_db),
     user: Optional[User] = Depends(get_required_user),
 ):
-    query = scope_media_query(db.query(Media).filter(Media.is_hidden.is_(False)), user)
+    query = scope_media_query(_browsable_media_query(db), user)
     if liked is not None:
         query = query.filter(Media.liked == liked)
 
@@ -350,7 +422,7 @@ def get_gallery(
         Paginated list of media records
     """
     # Build query
-    query = scope_media_query(_public_media_query(db), user)
+    query = scope_media_query(_browsable_media_query(db), user)
 
     if status:
         query = query.filter(Media.status == status)
@@ -401,44 +473,7 @@ def get_gallery(
     media_list = query.offset(skip).limit(limit).all()
 
     # Build response
-    items = []
-    for media in media_list:
-        item = {
-            "id": media.id,
-            "filename": media.filename,
-            "status": media.status,
-            "created_at": media.created_at.isoformat() if media.created_at else None,
-            "processed_at": (
-                media.processed_at.isoformat() if media.processed_at else None
-            ),
-            "width": media.width,
-            "height": media.height,
-            "file_size": media.file_size,
-            "cluster_id": media.cluster_id,
-            "minio_key": media.minio_key,
-            "thumbnail_key": media.thumbnail_key,
-            "thumbnail_content_type": media.thumbnail_content_type,
-            "thumbnail_size": media.thumbnail_size,
-            "thumbnail_width": media.thumbnail_width,
-            "thumbnail_height": media.thumbnail_height,
-            "liked": media.liked,
-        }
-
-        # Add original and thumbnail URLs separately.
-        try:
-            item["url"] = get_file_url(media.minio_key)
-        except Exception:
-            item["url"] = None
-        item["thumbnail_url"] = build_thumbnail_url(media.id)
-
-        # Add metadata if indexed
-        metadata = normalize_metadata(media.metadata_json)
-        if media.status == "indexed" and metadata:
-            item["caption"] = metadata.get("caption", "")
-            item["objects"] = metadata.get("objects", [])
-            item["has_text"] = bool(metadata.get("ocr_text", ""))
-
-        items.append(item)
+    items = [_serialize_media_item(media) for media in media_list]
 
     page = (skip // limit) + 1 if limit else 1
     return {
@@ -616,6 +651,237 @@ def toggle_like(
     db.refresh(media)
 
     return {"id": media.id, "liked": media.liked}
+
+
+@router.post("/image/{media_id}/archive")
+def set_archive(
+    media_id: int,
+    request: ArchiveRequest,
+    db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_required_user),
+):
+    """Archive or unarchive an asset.
+
+    Archived assets are kept but excluded from the main timeline/search; they
+    remain visible in the dedicated archive view. A trashed asset cannot be
+    archived — restore it first.
+    """
+    media = _load_public_media_or_404(db, media_id)
+    if not can_access_media(media, user):
+        raise HTTPException(404, "Image not found")
+    if media.deleted_at is not None:
+        raise HTTPException(409, "Cannot archive a trashed image; restore it first.")
+
+    media.is_archived = bool(request.archived)
+    db.commit()
+    invalidate_query_cache()
+    db.refresh(media)
+
+    return {"id": media.id, "is_archived": media.is_archived}
+
+
+@router.post("/image/{media_id}/trash")
+def trash_image(
+    media_id: int,
+    db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_required_user),
+):
+    """Soft-delete (trash) an asset.
+
+    Sets ``deleted_at`` so the asset drops out of every browse surface but is
+    recoverable via restore until purged. The file is NOT removed from storage
+    (that only happens on permanent delete / empty-trash).
+    """
+    media = _load_public_media_or_404(db, media_id)
+    if not can_access_media(media, user):
+        raise HTTPException(404, "Image not found")
+
+    if media.deleted_at is None:
+        media.deleted_at = datetime.now(timezone.utc)
+        db.commit()
+        invalidate_query_cache()
+        db.refresh(media)
+
+    return {
+        "id": media.id,
+        "deleted_at": media.deleted_at.isoformat() if media.deleted_at else None,
+    }
+
+
+@router.post("/image/{media_id}/restore")
+def restore_image(
+    media_id: int,
+    db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_required_user),
+):
+    """Restore a trashed asset back to the timeline."""
+    media = _load_public_media_or_404(db, media_id)
+    if not can_access_media(media, user):
+        raise HTTPException(404, "Image not found")
+
+    media.deleted_at = None
+    db.commit()
+    invalidate_query_cache()
+    db.refresh(media)
+
+    return {"id": media.id, "deleted_at": None}
+
+
+@router.get("/archive")
+def get_archive(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_required_user),
+):
+    """List archived assets (archived and not trashed), newest first."""
+    query = scope_media_query(
+        _public_media_query(db).filter(
+            Media.is_archived.is_(True),
+            Media.deleted_at.is_(None),
+        ),
+        user,
+    )
+    total = query.count()
+    media_list = query.order_by(desc(Media.created_at)).offset(skip).limit(limit).all()
+    items = [_serialize_media_item(media) for media in media_list]
+    page = (skip // limit) + 1 if limit else 1
+    return {"items": items, "total": total, "skip": skip, "page": page, "limit": limit}
+
+
+@router.get("/trash")
+def get_trash(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
+    db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_required_user),
+):
+    """List trashed assets (``deleted_at`` set), most recently trashed first."""
+    query = scope_media_query(
+        _public_media_query(db).filter(Media.deleted_at.isnot(None)),
+        user,
+    )
+    total = query.count()
+    media_list = query.order_by(desc(Media.deleted_at)).offset(skip).limit(limit).all()
+    items = [_serialize_media_item(media) for media in media_list]
+    page = (skip // limit) + 1 if limit else 1
+    return {"items": items, "total": total, "skip": skip, "page": page, "limit": limit}
+
+
+@router.post("/trash/empty", response_model=BulkDeleteResponse)
+def empty_trash(
+    db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_required_user),
+):
+    """Permanently delete every trashed asset (files + rows).
+
+    This is the only place trashing becomes irreversible. Mirrors the bulk
+    delete flow: best-effort storage deletion, then row removal and cluster
+    membership cleanup.
+    """
+    media_rows = scope_media_query(
+        _public_media_query(db).filter(Media.deleted_at.isnot(None)),
+        user,
+    ).all()
+
+    deleted_ids: list[int] = []
+    failed_ids: list[int] = []
+
+    for media in media_rows:
+        try:
+            _delete_media_files(media)
+        except Exception as exc:  # noqa: BLE001
+            failed_ids.append(media.id)
+            logger.warning(
+                "Failed to delete media %s during empty-trash: %s", media.id, exc
+            )
+            continue
+        db.delete(media)
+        deleted_ids.append(media.id)
+
+    if deleted_ids:
+        db.flush()
+        _remove_media_ids_from_clusters(db, set(deleted_ids))
+
+    db.commit()
+    if deleted_ids:
+        invalidate_query_cache()
+
+    return {
+        "message": "Trash emptied",
+        "deleted_ids": deleted_ids,
+        "missing_ids": [],
+        "failed_ids": failed_ids,
+        "deleted_count": len(deleted_ids),
+        "missing_count": 0,
+        "failed_count": len(failed_ids),
+    }
+
+
+@router.post("/trash/purge", response_model=BulkDeleteResponse)
+def purge_expired_trash(
+    db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_required_user),
+):
+    """Permanently delete trashed assets older than the retention window.
+
+    Like empty-trash but age-bounded: only rows whose ``deleted_at`` is older
+    than ``TRASH_RETENTION_DAYS`` are removed. Intended for a scheduled/manual
+    auto-purge. Retention of 0 disables age-based purging (no-op).
+    """
+    retention_days = settings.TRASH_RETENTION_DAYS
+    if retention_days <= 0:
+        return {
+            "message": "Auto-purge disabled (TRASH_RETENTION_DAYS=0)",
+            "deleted_ids": [],
+            "missing_ids": [],
+            "failed_ids": [],
+            "deleted_count": 0,
+            "missing_count": 0,
+            "failed_count": 0,
+        }
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    media_rows = scope_media_query(
+        _public_media_query(db).filter(
+            Media.deleted_at.isnot(None),
+            Media.deleted_at < cutoff,
+        ),
+        user,
+    ).all()
+
+    deleted_ids: list[int] = []
+    failed_ids: list[int] = []
+
+    for media in media_rows:
+        try:
+            _delete_media_files(media)
+        except Exception as exc:  # noqa: BLE001
+            failed_ids.append(media.id)
+            logger.warning(
+                "Failed to delete media %s during trash purge: %s", media.id, exc
+            )
+            continue
+        db.delete(media)
+        deleted_ids.append(media.id)
+
+    if deleted_ids:
+        db.flush()
+        _remove_media_ids_from_clusters(db, set(deleted_ids))
+
+    db.commit()
+    if deleted_ids:
+        invalidate_query_cache()
+
+    return {
+        "message": f"Purged trash older than {retention_days} days",
+        "deleted_ids": deleted_ids,
+        "missing_ids": [],
+        "failed_ids": failed_ids,
+        "deleted_count": len(deleted_ids),
+        "missing_count": 0,
+        "failed_count": len(failed_ids),
+    }
 
 
 @router.post("/image/{media_id}/reprocess")
