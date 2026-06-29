@@ -43,6 +43,18 @@ class Media(Base):
     is_hidden = Column(
         Boolean, nullable=False, default=False, server_default=sa_text("false")
     )
+    # Archive state — archived assets are kept but excluded from the main
+    # timeline/search; surfaced only in the dedicated archive view.
+    is_archived = Column(
+        Boolean,
+        nullable=False,
+        index=True,
+        default=False,
+        server_default=sa_text("false"),
+    )
+    # Soft-delete (trash) — non-null means the asset is in the trash and is
+    # excluded from every browse surface until restored or purged.
+    deleted_at = Column(DateTime(timezone=True), nullable=True, index=True)
     vault_state = Column(
         String(32),
         nullable=False,

@@ -53,6 +53,11 @@ class Settings(BaseSettings):
     YOLO_MODEL: str = "yolo26n.pt"
     USE_GPU: bool = False
     YOLO_HALF: bool = True
+    # Hardware acceleration mode for ML inference:
+    #   auto = use the best available accelerator, else CPU (default)
+    #   gpu  = prefer GPU; automatically fall back to CPU if unavailable
+    #   cpu  = force CPU
+    ACCEL_MODE: Literal["auto", "gpu", "cpu"] = "auto"
 
     # Processing
     MAX_UPLOAD_SIZE_MB: int = 50

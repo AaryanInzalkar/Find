@@ -40,6 +40,7 @@ def init_db():
     try:
         # Import all models to register them for metadata creation
         from find_api.models import (  # noqa: F401
+            album,
             cluster,
             face,
             feedback,
@@ -48,6 +49,7 @@ def init_db():
             media,
             person,
             session,
+            shared_link,
             user,
             vault,
         )
@@ -91,6 +93,18 @@ def init_db():
                     text(
                         "ALTER TABLE IF EXISTS media "
                         "ADD COLUMN IF NOT EXISTS encrypted_at TIMESTAMP WITH TIME ZONE"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "ALTER TABLE IF EXISTS media "
+                        "ADD COLUMN IF NOT EXISTS is_archived BOOLEAN NOT NULL DEFAULT false"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "ALTER TABLE IF EXISTS media "
+                        "ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMP WITH TIME ZONE"
                     )
                 )
                 conn.execute(
@@ -217,6 +231,18 @@ def init_db():
                     text(
                         "CREATE INDEX IF NOT EXISTS ix_media_vault_state "
                         "ON media (vault_state)"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_media_is_archived "
+                        "ON media (is_archived)"
+                    )
+                )
+                conn.execute(
+                    text(
+                        "CREATE INDEX IF NOT EXISTS ix_media_deleted_at "
+                        "ON media (deleted_at)"
                     )
                 )
                 conn.execute(
