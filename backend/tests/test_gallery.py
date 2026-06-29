@@ -1133,3 +1133,68 @@ class TestArchiveTrashRestore:
 
         assert response.status_code == 200
         assert response.json()["deleted_count"] == 0
+
+    # --- auto-purge (retention-based) --------------------------------------
+    def test_purge_deletes_only_items_past_retention(self, client, db):
+        from datetime import timedelta
+
+        now = datetime.now(timezone.utc)
+        # Default TRASH_RETENTION_DAYS is 30.
+        old = _seed(
+            db,
+            filename="old.jpg",
+            status="indexed",
+            deleted_at=now - timedelta(days=31),
+        )
+        recent = _seed(
+            db,
+            filename="recent.jpg",
+            status="indexed",
+            deleted_at=now - timedelta(days=5),
+        )
+        old_id, recent_id = old.id, recent.id
+
+        with patch("find_api.routers.gallery.delete_file"):
+            response = client.post("/api/trash/purge")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["deleted_ids"] == [old_id]
+        # Old item gone; recently-trashed item retained.
+        assert db.query(Media).filter(Media.id == old_id).first() is None
+        assert db.query(Media).filter(Media.id == recent_id).first() is not None
+
+    def test_purge_ignores_non_trashed(self, client, db):
+        from datetime import timedelta
+
+        _seed(db, filename="live.jpg", status="indexed")  # never trashed
+        _seed(
+            db,
+            filename="old.jpg",
+            status="indexed",
+            deleted_at=datetime.now(timezone.utc) - timedelta(days=40),
+        )
+
+        with patch("find_api.routers.gallery.delete_file"):
+            body = client.post("/api/trash/purge").json()
+
+        assert body["deleted_count"] == 1
+
+    def test_purge_disabled_when_retention_zero(self, client, db):
+        from datetime import timedelta
+
+        _seed(
+            db,
+            filename="old.jpg",
+            status="indexed",
+            deleted_at=datetime.now(timezone.utc) - timedelta(days=99),
+        )
+
+        with patch("find_api.routers.gallery.settings") as mock_settings:
+            mock_settings.TRASH_RETENTION_DAYS = 0
+            response = client.post("/api/trash/purge")
+
+        assert response.status_code == 200
+        assert response.json()["deleted_count"] == 0
+        # Nothing deleted when retention is disabled.
+        assert db.query(Media).filter(Media.filename == "old.jpg").first() is not None

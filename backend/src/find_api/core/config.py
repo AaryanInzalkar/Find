@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     MAX_BULK_TOTAL_SIZE_MB: int = 500
     MAX_BULK_COMPRESSION_RATIO: int = 100
     WORKER_TIMEOUT: int = 600
+    # Trashed assets older than this many days are eligible for permanent
+    # auto-purge (via POST /trash/purge). 0 disables age-based purging.
+    TRASH_RETENTION_DAYS: int = 30
     BATCH_SIZE: int = 1
     EMBEDDING_DIM: int = 768  # SigLIP ViT-B-16 dimension
 
