@@ -10,11 +10,16 @@ import { getAppConfig } from "@/lib/api";
 const navLinks = [
   { href: "/upload", label: "Upload" },
   { href: "/gallery", label: "Gallery" },
+  { href: "/timeline", label: "Timeline" },
+  { href: "/albums", label: "Albums" },
   { href: "/vault", label: "Vault" },
   { href: "/search", label: "Search" },
   { href: "/clusters", label: "Clusters" },
   { href: "/duplicates", label: "Duplicates" },
   { href: "/people", label: "People" },
+  { href: "/archive", label: "Archive" },
+  { href: "/trash", label: "Trash" },
+  { href: "/settings", label: "Settings" },
 ];
 
 type Theme = "light" | "dark";
