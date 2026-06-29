@@ -31,13 +31,19 @@ from find_api.core.crypto import (
     set_session_key,
 )
 from find_api.core.database import get_db
+from find_api.core.dependencies import get_required_user
 from find_api.core.storage import delete_file, download_file_to_path
 from find_api.models.media import Media
+from find_api.models.user import User
 
 router = APIRouter()
 limiter = Limiter(key_func=get_remote_address)
 ENCRYPTION_ALGORITHM = "AES-256-GCM"
 KEY_DERIVATION_METHOD = "PBKDF2-HMAC-SHA256"
+
+# Minimum passphrase length enforced when a vault is first created. Existing
+# vaults are not re-validated on unlock so short legacy passphrases keep working.
+MIN_VAULT_PASSPHRASE_LENGTH = 8
 
 
 class VaultUnlockRequest(BaseModel):
@@ -222,10 +228,26 @@ def unlock_vault(
     request: Request,
     payload: VaultUnlockRequest,
     db: Session = Depends(get_db),
+    _user: Optional[User] = Depends(get_required_user),
 ):
     """Unlock the vault and cache a short-lived session token."""
     if not payload.passphrase or not payload.passphrase.strip():
         raise HTTPException(status_code=400, detail="Passphrase must not be empty")
+
+    # When no vault exists yet, the first unlock *creates* it with this
+    # passphrase. Enforce a minimum length at creation time so the global
+    # vault secret cannot be a trivial passphrase. Existing vaults are not
+    # re-validated, so previously-set passphrases keep working.
+    if _load_vault_config(db) is None:
+        if len(payload.passphrase) < MIN_VAULT_PASSPHRASE_LENGTH:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    "Vault passphrase must be at least "
+                    f"{MIN_VAULT_PASSPHRASE_LENGTH} characters"
+                ),
+            )
+
     master_key = _load_or_create_master_key(db, payload.passphrase)
     session_token = secrets.token_urlsafe(32)
     set_session_key(session_token, master_key)
