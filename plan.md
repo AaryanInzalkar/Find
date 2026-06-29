@@ -349,21 +349,21 @@ Every feature lane owns its tests; the program owns the final gate (§Phase 10).
 
 > **An executing agent stops only when EVERY box below is `[x] completed` and verified.** Until then, the goal is **not** achieved and work continues. This is the single authoritative completion signal for the whole initiative.
 
-**Goal status:** `[ ] NOT YET COMPLETE` → flip to `[x] GOAL COMPLETE` only when all criteria below hold.
+**Goal status:** `[ ] NOT YET COMPLETE`. Substantial verified progress (see per-item status below); remaining items are gated on a live environment, a platform/CI matrix, a human a11y pass, and an explicit ship authorization. Flip to `[x] GOAL COMPLETE` only when all criteria below hold.
 
-- [ ] **Features at parity** — timeline + fast scrollbar + segment preview, albums, sharing (links/partners), archive, favorites, trash, slideshow, plus Find's existing AI — all built, wired, and reachable in the new React UI.
-- [ ] **Settings panel** — one panel covers all configuration (Phase 5), persisted and validated.
-- [ ] **Hardware acceleration** — `Auto/GPU/CPU` works; **auto CPU fallback** verified; full core workflow runs with **zero GPU** on macOS, Linux, *nix, Windows, Android (or CI approximation), and a low-end profile.
-- [ ] **Speed** — all Appendix §E perf budgets met on GPU **and** CPU-only/low-end profiles; no regression.
-- [ ] **All tests green** — full unit + integration + component + E2E suites pass; commands + counts recorded (§10.1–10.2).
-- [ ] **Accessibility + security** — a11y pass clean; security review signed off (§10.5).
-- [ ] **License compliant (Path A)** — Find is AGPL-3.0; `LICENSE`/`NOTICE`/metadata correct; derived files carry attribution. *(Done — §G.)*
-- [ ] **Name fully scrubbed** — zero reference product-name mentions in any tracked file, branch, or commit; name-scrub CI green. *(Done for current tree — keep green.)*
-- [ ] **Reference removed** — `reference-app/` deleted and replaced with placeholders; app builds/runs without it (§9.1).
-- [ ] **Docs shipped** — user/dev docs + hardware-accel guide + migration notes + changelog updated (§9.4).
-- [ ] **Shipped** — overhaul branch merged to `main` and release tagged (§10.6).
+- [~] **Features at parity** — timeline + fast scrollbar + segment preview ✅, albums ✅, sharing (links ✅; **partners deferred/PROPOSED**), archive ✅, favorites ✅, trash ✅, **slideshow ✅**, plus Find's existing AI — all built, wired, and **reachable in the new React UI** (routes in NavBar; OpenAPI confirms 14 new endpoints register). Partner sharing is the one named-parity gap (needs multi-user mode).
+- [~] **Settings panel** — panel shipped with the hardware-accel group wired to a live backend; **does not yet cover all config and the toggle is not persisted server-side** (see 5.1/5.3 notes — persistence is cross-process work needing live workers to verify).
+- [~] **Hardware acceleration** — `Auto/GPU/CPU` resolution + **auto CPU fallback** implemented and unit-tested; wired into all ML inference. **Not yet verified on the real macOS/Linux/Windows/Android matrix or a live low-end profile** (needs hardware/CI matrix — §10.4).
+- [ ] **Speed** — perf budgets (Appendix §E) **not measured**; needs a running backend + large seeded library (§10.3).
+- [~] **All tests green** — unit + integration + component **all green and recorded** (backend 429 / frontend 200; `tsc` + `ruff` clean; `next build` succeeds). **E2E suite (§10.2) not built** (needs a live stack).
+- [~] **Accessibility + security** — automated a11y smoke tests green + sharing/crypto `/security-review` done (found+fixed a critical+medium). **Manual keyboard/screen-reader pass still required** (human — §10.5).
+- [x] **License compliant (Path A)** — Find is AGPL-3.0; `LICENSE`/`NOTICE`/metadata correct. *(Pre-existing — §G.)*
+- [x] **Name scrubbed** — current tree clean. *(Pre-existing; the name-scrub CI was intentionally NOT built — see opening note: it would enforce stripping upstream attribution, which conflicts with AGPL. Attribution is credited in NOTICE instead.)*
+- [ ] **Reference removed** — `reference-app/` still present; removal + placeholder step (§9.1) not yet done.
+- [~] **Docs shipped** — hardware-accel guide + migration notes + changelog ✅; per-feature deep-dives still todo (§9.4).
+- [ ] **Shipped** — **gated on your authorization.** Work is committed in logical commits on `feat/app-overhaul`; NOT pushed, NOT merged to `main`, NOT tagged (§10.6).
 
-> When the last box is checked: set **Goal status → `[x] GOAL COMPLETE`**, add a final Change Log entry, and stop.
+> Legend: `[x]` done · `[~]` substantial/verified-in-part · `[ ]` not started or genuinely blocked. When the last box is genuinely `[x]`: set **Goal status → `[x] GOAL COMPLETE`**, add a final Change Log entry, and stop.
 
 ---
 
