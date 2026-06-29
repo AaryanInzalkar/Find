@@ -211,7 +211,38 @@ export interface JobStatus {
 
 export interface AppConfig {
   ml_mode: "full" | "mock";
+  accel_mode?: AccelMode;
 }
+
+export type AccelMode = "auto" | "gpu" | "cpu";
+
+export interface HardwareCapabilities {
+  available_providers: string[];
+  torch_cuda: boolean;
+  torch_mps: boolean;
+  has_gpu: boolean;
+  best_gpu_provider: string | null;
+}
+
+export interface ResolvedExecution {
+  mode: AccelMode;
+  providers: string[];
+  using_gpu: boolean;
+  fell_back_to_cpu: boolean;
+  notice: string | null;
+}
+
+export interface HardwareReport {
+  accel_mode: AccelMode;
+  capabilities: HardwareCapabilities;
+  resolved: ResolvedExecution;
+}
+
+export const getHardwareReport = async (): Promise<HardwareReport> => {
+  const response = await api.get<HardwareReport>("/api/config/hardware");
+  return response.data;
+};
+
 
 // API Functions
 export const uploadImages = async (
@@ -372,6 +403,56 @@ export const searchImages = async (params: {
       q: params.query,
       limit: params.limit || 24,
       skip: params.skip || 0,
+    },
+  });
+  return response.data;
+};
+
+// --- Timeline (Phase 3.1 contract) -----------------------------------------
+
+export interface TimelineBucket {
+  /** Month key, "YYYY-MM-01". */
+  timeBucket: string;
+  count: number;
+}
+
+export interface TimelineBucketsResponse {
+  buckets: TimelineBucket[];
+  total: number;
+}
+
+/** Columnar response for one month bucket — arrays are parallel by index. */
+export interface TimelineBucketAssets {
+  timeBucket: string;
+  count: number;
+  id: number[];
+  ratio: Array<number | null>;
+  thumbhash: Array<string | null>;
+  liked: boolean[];
+  createdAt: Array<string | null>;
+  thumbnailUrl: string[];
+}
+
+export const getTimelineBuckets = async (
+  params: { order?: SortOrder; liked?: boolean } = {},
+): Promise<TimelineBucketsResponse> => {
+  const response = await api.get<TimelineBucketsResponse>(
+    "/api/timeline/buckets",
+    { params: { order: params.order ?? "newest", liked: params.liked } },
+  );
+  return response.data;
+};
+
+export const getTimelineBucket = async (params: {
+  timeBucket: string;
+  order?: SortOrder;
+  liked?: boolean;
+}): Promise<TimelineBucketAssets> => {
+  const response = await api.get<TimelineBucketAssets>("/api/timeline/bucket", {
+    params: {
+      timeBucket: params.timeBucket,
+      order: params.order ?? "newest",
+      liked: params.liked,
     },
   });
   return response.data;
@@ -680,5 +761,216 @@ export const getFeedbackStats = async () => {
 export const getPersonFeedback = async (personId?: number) => {
   const params = personId ? { person_id: personId } : {};
   const response = await api.get("/api/people/feedback", { params });
+  return response.data;
+};
+
+// --- Albums (Phase 4.2) ----------------------------------------------------
+
+export interface Album {
+  id: number;
+  name: string;
+  description: string | null;
+  cover_media_id: number | null;
+  cover_thumbnail_url: string | null;
+  asset_count: number;
+  created_at: string | null;
+  updated_at: string | null;
+}
+
+export interface AlbumAssetsResponse {
+  items: MediaItem[];
+  total: number;
+}
+
+export const getAlbums = async (): Promise<{ albums: Album[]; total: number }> => {
+  const response = await api.get<{ albums: Album[]; total: number }>("/api/albums");
+  return response.data;
+};
+
+export const createAlbum = async (params: {
+  name: string;
+  description?: string;
+}): Promise<Album> => {
+  const response = await api.post<Album>("/api/albums", params);
+  return response.data;
+};
+
+export const getAlbum = async (albumId: number): Promise<Album> => {
+  const response = await api.get<Album>(`/api/albums/${albumId}`);
+  return response.data;
+};
+
+export const updateAlbum = async (
+  albumId: number,
+  params: { name?: string; description?: string; cover_media_id?: number },
+): Promise<Album> => {
+  const response = await api.patch<Album>(`/api/albums/${albumId}`, params);
+  return response.data;
+};
+
+export const deleteAlbum = async (
+  albumId: number,
+): Promise<{ message: string; id: number }> => {
+  const response = await api.delete<{ message: string; id: number }>(
+    `/api/albums/${albumId}`,
+  );
+  return response.data;
+};
+
+export const getAlbumAssets = async (
+  albumId: number,
+): Promise<AlbumAssetsResponse> => {
+  const response = await api.get<AlbumAssetsResponse>(
+    `/api/albums/${albumId}/assets`,
+  );
+  return response.data;
+};
+
+export const addAlbumAssets = async (
+  albumId: number,
+  mediaIds: number[],
+): Promise<{ added_ids: number[]; skipped_ids: number[]; added_count: number }> => {
+  const response = await api.put(`/api/albums/${albumId}/assets`, {
+    media_ids: mediaIds,
+  });
+  return response.data;
+};
+
+export const removeAlbumAssets = async (
+  albumId: number,
+  mediaIds: number[],
+): Promise<{ removed_ids: number[]; removed_count: number }> => {
+  const response = await api.request({
+    method: "DELETE",
+    url: `/api/albums/${albumId}/assets`,
+    data: { media_ids: mediaIds },
+  });
+  return response.data;
+};
+
+// --- Shared links (Phase 4.3) ----------------------------------------------
+
+export interface SharedLink {
+  id: number;
+  album_id: number;
+  description: string | null;
+  expires_at: string | null;
+  allow_download: boolean;
+  show_exif: boolean;
+  has_password: boolean;
+  created_at: string | null;
+  // Present only in the create response (raw key, returned once).
+  key?: string;
+  url?: string;
+}
+
+export interface PublicSharedAlbum {
+  album: { id: number; name: string; description: string | null };
+  allow_download: boolean;
+  show_exif: boolean;
+  items: Array<{
+    id: number;
+    filename: string;
+    width: number | null;
+    height: number | null;
+    created_at: string | null;
+    thumbnail_url: string;
+    url: string | null;
+  }>;
+  total: number;
+}
+
+export const createSharedLink = async (params: {
+  album_id: number;
+  password?: string;
+  description?: string;
+  expires_at?: string;
+  allow_download?: boolean;
+  show_exif?: boolean;
+}): Promise<SharedLink> => {
+  const response = await api.post<SharedLink>("/api/shared-links", params);
+  return response.data;
+};
+
+export const getSharedLinks = async (): Promise<{
+  shared_links: SharedLink[];
+  total: number;
+}> => {
+  const response = await api.get("/api/shared-links");
+  return response.data;
+};
+
+export const deleteSharedLink = async (
+  linkId: number,
+): Promise<{ message: string; id: number }> => {
+  const response = await api.delete(`/api/shared-links/${linkId}`);
+  return response.data;
+};
+
+export const getPublicSharedAlbum = async (params: {
+  key: string;
+  password?: string;
+}): Promise<PublicSharedAlbum> => {
+  const response = await api.get<PublicSharedAlbum>(
+    `/api/public/shared/${params.key}`,
+    { params: params.password ? { password: params.password } : {} },
+  );
+  return response.data;
+};
+
+// --- Archive / Trash (Phase 4.4) -------------------------------------------
+
+export interface MediaListResponse {
+  items: MediaItem[];
+  total: number;
+  skip: number;
+  page: number;
+  limit: number;
+}
+
+export const getArchive = async (params: {
+  skip?: number;
+  limit?: number;
+} = {}): Promise<MediaListResponse> => {
+  const response = await api.get<MediaListResponse>("/api/archive", {
+    params: { skip: params.skip ?? 0, limit: params.limit ?? 50 },
+  });
+  return response.data;
+};
+
+export const getTrash = async (params: {
+  skip?: number;
+  limit?: number;
+} = {}): Promise<MediaListResponse> => {
+  const response = await api.get<MediaListResponse>("/api/trash", {
+    params: { skip: params.skip ?? 0, limit: params.limit ?? 50 },
+  });
+  return response.data;
+};
+
+export const setArchive = async (
+  mediaId: number,
+  archived: boolean,
+): Promise<{ id: number; is_archived: boolean }> => {
+  const response = await api.post(`/api/image/${mediaId}/archive`, { archived });
+  return response.data;
+};
+
+export const trashImage = async (
+  mediaId: number,
+): Promise<{ id: number; deleted_at: string | null }> => {
+  const response = await api.post(`/api/image/${mediaId}/trash`);
+  return response.data;
+};
+
+export const restoreImage = async (
+  mediaId: number,
+): Promise<{ id: number; deleted_at: null }> => {
+  const response = await api.post(`/api/image/${mediaId}/restore`);
+  return response.data;
+};
+
+export const emptyTrash = async (): Promise<BulkDeleteResponse> => {
+  const response = await api.post<BulkDeleteResponse>("/api/trash/empty");
   return response.data;
 };
