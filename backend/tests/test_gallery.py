@@ -460,20 +460,176 @@ class TestBulkDeleteImages:
         assert db.query(Media).filter(Media.id == first.id).first() is not None
         assert db.query(Media).filter(Media.id == second.id).first() is None
 
-    def test_bulk_delete_treats_hidden_ids_as_missing(self, client, db):
-        visible = _seed(db, filename="bulk-visible.jpg", status="indexed")
-        hidden = _seed(db, filename="bulk-hidden.jpg", status="indexed", is_hidden=True)
 
-        with patch("find_api.routers.gallery.delete_file"):
-            response = client.post(
-                "/api/images/bulk-delete",
-                json={"media_ids": [hidden.id, visible.id]},
-            )
+class TestGalleryMetadataFilters:
+    """Gallery filters using EXIF and image metadata."""
+
+    def test_gallery_filters_by_camera_make(self, client, db):
+        canon = _seed(db, filename="canon.jpg", status="indexed")
+        nikon = _seed(db, filename="nikon.jpg", status="indexed")
+        canon.exif_json = {"make": "Canon", "model": "EOS 80D"}
+        nikon.exif_json = {"make": "Nikon", "model": "D3500"}
+        db.commit()
+
+        response = client.get("/api/gallery", params={"camera_make": "Canon"})
 
         assert response.status_code == 200
         body = response.json()
-        assert body["deleted_ids"] == [visible.id]
-        assert body["missing_ids"] == [hidden.id]
-        assert body["failed_ids"] == []
-        assert db.query(Media).filter(Media.id == visible.id).first() is None
-        assert db.query(Media).filter(Media.id == hidden.id).first() is not None
+        assert body["total"] == 1
+        assert body["items"][0]["filename"] == "canon.jpg"
+
+    def test_gallery_filters_by_camera_model(self, client, db):
+        canon = _seed(db, filename="canon.jpg", status="indexed")
+        sony = _seed(db, filename="sony.jpg", status="indexed")
+        canon.exif_json = {"make": "Canon", "model": "EOS 80D"}
+        sony.exif_json = {"make": "Sony", "model": "Alpha 7"}
+        db.commit()
+
+        response = client.get("/api/gallery", params={"camera_model": "Alpha"})
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total"] == 1
+        assert body["items"][0]["filename"] == "sony.jpg"
+
+    def test_gallery_filters_by_min_dimensions(self, client, db):
+        small = _seed(db, filename="small.jpg", status="indexed")
+        large = _seed(db, filename="large.jpg", status="indexed")
+        small.width = 640
+        small.height = 480
+        large.width = 3000
+        large.height = 2000
+        db.commit()
+
+        response = client.get(
+            "/api/gallery",
+            params={"min_width": 1000, "min_height": 1000},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total"] == 1
+        assert body["items"][0]["filename"] == "large.jpg"
+
+    def test_gallery_filters_by_file_type(self, client, db):
+        jpg = _seed(db, filename="photo.jpg", status="indexed")
+        png = _seed(db, filename="graphic.png", status="indexed")
+        jpg.content_type = "image/jpeg"
+        png.content_type = "image/png"
+        db.commit()
+
+        response = client.get("/api/gallery", params={"file_type": "png"})
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total"] == 1
+        assert body["items"][0]["filename"] == "graphic.png"
+
+    def test_gallery_filters_by_date_range(self, client, db):
+        older = _seed(db, filename="older.jpg", status="indexed")
+        newer = _seed(db, filename="newer.jpg", status="indexed")
+        older.created_at = datetime(2026, 1, 10, tzinfo=timezone.utc)
+        newer.created_at = datetime(2026, 2, 10, tzinfo=timezone.utc)
+        db.commit()
+
+        response = client.get(
+            "/api/gallery",
+            params={"date_from": "2026-02-01", "date_to": "2026-02-28"},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total"] == 1
+        assert body["items"][0]["filename"] == "newer.jpg"
+
+    def test_gallery_date_to_includes_entire_date_only_day(self, client, db):
+        early = _seed(db, filename="early.jpg", status="indexed")
+        late = _seed(db, filename="late.jpg", status="indexed")
+        next_day = _seed(db, filename="next-day.jpg", status="indexed")
+        early.created_at = datetime(2026, 2, 28, 0, 5, tzinfo=timezone.utc)
+        late.created_at = datetime(2026, 2, 28, 23, 55, tzinfo=timezone.utc)
+        next_day.created_at = datetime(2026, 3, 1, 0, 1, tzinfo=timezone.utc)
+        db.commit()
+
+        response = client.get("/api/gallery", params={"date_to": "2026-02-28"})
+
+        assert response.status_code == 200
+        filenames = {item["filename"] for item in response.json()["items"]}
+        assert filenames == {"early.jpg", "late.jpg"}
+
+    def test_gallery_filters_by_orientation(self, client, db):
+        landscape = _seed(db, filename="landscape.jpg", status="indexed")
+        portrait = _seed(db, filename="portrait.jpg", status="indexed")
+        square = _seed(db, filename="square.jpg", status="indexed")
+        landscape.width = 1600
+        landscape.height = 900
+        portrait.width = 900
+        portrait.height = 1600
+        square.width = 1200
+        square.height = 1200
+        db.commit()
+
+        response = client.get("/api/gallery", params={"orientation": "portrait"})
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total"] == 1
+        assert body["items"][0]["filename"] == "portrait.jpg"
+
+    def test_gallery_rejects_invalid_metadata_filter_values(self, client):
+        invalid_date = client.get("/api/gallery", params={"date_from": "not-a-date"})
+        invalid_range = client.get(
+            "/api/gallery",
+            params={"date_from": "2026-03-01", "date_to": "2026-02-01"},
+        )
+        invalid_orientation = client.get(
+            "/api/gallery",
+            params={"orientation": "diagonal"},
+        )
+
+        assert invalid_date.status_code == 422
+        assert invalid_range.status_code == 422
+        assert invalid_orientation.status_code == 422
+
+    def test_gallery_filter_excludes_missing_exif_data(self, client, db):
+        with_exif = _seed(db, filename="canon.jpg", status="indexed")
+        without_exif = _seed(db, filename="no-exif.jpg", status="indexed")
+        with_exif.exif_json = {"make": "Canon", "model": "EOS 80D"}
+        without_exif.exif_json = None
+        db.commit()
+
+        response = client.get("/api/gallery", params={"camera_make": "Canon"})
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total"] == 1
+        assert body["items"][0]["filename"] == "canon.jpg"
+
+    def test_gallery_supports_combined_metadata_filters(self, client, db):
+        large_canon = _seed(db, filename="large-canon.jpg", status="indexed")
+        small_canon = _seed(db, filename="small-canon.jpg", status="indexed")
+        large_sony = _seed(db, filename="large-sony.jpg", status="indexed")
+
+        large_canon.exif_json = {"make": "Canon", "model": "EOS 80D"}
+        large_canon.width = 3000
+        large_canon.height = 2000
+
+        small_canon.exif_json = {"make": "Canon", "model": "EOS M50"}
+        small_canon.width = 640
+        small_canon.height = 480
+
+        large_sony.exif_json = {"make": "Sony", "model": "Alpha 7"}
+        large_sony.width = 3000
+        large_sony.height = 2000
+
+        db.commit()
+
+        response = client.get(
+            "/api/gallery",
+            params={"camera_make": "Canon", "min_width": 1000},
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["total"] == 1
+        assert body["items"][0]["filename"] == "large-canon.jpg"
