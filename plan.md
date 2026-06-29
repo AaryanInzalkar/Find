@@ -297,10 +297,10 @@ A **fast, lightweight, open-source** Find that:
 - **Stage 9.2 — Feature integration** · Owner: ___ — [ ] todo — Wire all phases together on one running build; resolve cross-lane seams; everything reachable from the new UI.
 - **Stage 9.3 — Compliance close-out** · Owner: ___ — [>] in-progress — Verify §1 license/attribution obligations satisfied; verify name-scrub CI is green.
   - [x] completed — §1 attribution obligations verified (see 9.1: no reference source committed, derived files attributed, Find is AGPL-3.0 per §G). *(Name-scrub CI intentionally not built — see opening note: it would enforce stripping upstream attribution, contrary to AGPL; attribution is credited in NOTICE instead. The factual check "no reference source committed" passes.)*
-- **Stage 9.4 — Docs** · Owner: ___ — [>] in-progress — User/dev docs (incl. hardware-accel guide), migration notes, changelog.
+- **Stage 9.4 — Docs** · Owner: ___ — [x] completed — User/dev docs (incl. hardware-accel guide), migration notes, changelog.
   - [x] completed — **Hardware-acceleration guide** shipped (`docs/guides/hardware-acceleration.md`): modes (auto/gpu/cpu), detection + auto-CPU-fallback, `/api/config/hardware`, configuration, CPU-only deployments, troubleshooting. Linked from `docs/index.md`; `ACCEL_MODE` documented in `.env.example` (with the legacy `USE_GPU` note).
   - [x] completed — **Migration notes + changelog.** `CHANGELOG.md` (Keep-a-Changelog, Unreleased/overhaul section) + `MIGRATION.md` (3 Alembic migrations to `head`, runtime normalizer note, `ACCEL_MODE` env var, non-breaking-change + accurate merge-point rollback notes). Linked both from `docs/index.md`.
-  - [ ] todo — Remaining: per-feature user/dev docs (timeline/albums/sharing/archive-trash deep-dives).
+  - [x] completed — **Features guide** (`docs/guides/features.md`): per-feature user docs for timeline (grid/scrubber/viewer/slideshow), albums + add-to-album, sharing links, favorites/archive/trash, settings + accel toggle. Linked from `docs/index.md`.
 
 ### PHASE 10 — Final Testing & Acceptance  *(the stop gate)*
 **Goal:** prove the whole overhaul is correct, fast, and complete — then ship. This phase is what tells an executing agent the work is *done*. *(~1–2 weeks)*
@@ -361,7 +361,7 @@ Every feature lane owns its tests; the program owns the final gate (§Phase 10).
 - [x] **License compliant (Path A)** — Find is AGPL-3.0; `LICENSE`/`NOTICE`/metadata correct. *(Pre-existing — §G.)*
 - [x] **Name scrubbed** — current tree clean. *(Pre-existing; the name-scrub CI was intentionally NOT built — see opening note: it would enforce stripping upstream attribution, which conflicts with AGPL. Attribution is credited in NOTICE instead.)*
 - [ ] **Reference removed** — `reference-app/` still present; removal + placeholder step (§9.1) not yet done.
-- [~] **Docs shipped** — hardware-accel guide + migration notes + changelog ✅; per-feature deep-dives still todo (§9.4).
+- [x] **Docs shipped** — hardware-accel guide ✅, **features guide ✅**, migration notes ✅, changelog ✅ — all linked from `docs/index.md` (§9.4 complete).
 - [ ] **Shipped** — **gated on your authorization.** Work is committed in logical commits on `feat/app-overhaul`; NOT pushed, NOT merged to `main`, NOT tagged (§10.6).
 
 > Legend: `[x]` done · `[~]` substantial/verified-in-part · `[ ]` not started or genuinely blocked. When the last box is genuinely `[x]`: set **Goal status → `[x] GOAL COMPLETE`**, add a final Change Log entry, and stop.

@@ -38,6 +38,7 @@ This directory is organized by document purpose and implementation status.
 - [Common Setup Errors](guides/common-setup-errors.md)
 - [Image Loading Behavior](guides/image-loading.md)
 - [Real ML Troubleshooting](guides/real-ml-troubleshooting.md)
+- [Features Guide](guides/features.md)
 - [Hardware Acceleration](guides/hardware-acceleration.md)
 - [PR Triage Automation Dry Run](guides/pr-triage-dry-run.md)
 - [TestSprite PR Testing](guides/testsprite-ci.md)
