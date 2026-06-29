@@ -822,6 +822,72 @@ def empty_trash(
     }
 
 
+@router.post("/trash/purge", response_model=BulkDeleteResponse)
+def purge_expired_trash(
+    db: Session = Depends(get_db),
+    user: Optional[User] = Depends(get_required_user),
+):
+    """Permanently delete trashed assets older than the retention window.
+
+    Like empty-trash but age-bounded: only rows whose ``deleted_at`` is older
+    than ``TRASH_RETENTION_DAYS`` are removed. Intended for a scheduled/manual
+    auto-purge. Retention of 0 disables age-based purging (no-op).
+    """
+    retention_days = settings.TRASH_RETENTION_DAYS
+    if retention_days <= 0:
+        return {
+            "message": "Auto-purge disabled (TRASH_RETENTION_DAYS=0)",
+            "deleted_ids": [],
+            "missing_ids": [],
+            "failed_ids": [],
+            "deleted_count": 0,
+            "missing_count": 0,
+            "failed_count": 0,
+        }
+
+    cutoff = datetime.now(timezone.utc) - timedelta(days=retention_days)
+    media_rows = scope_media_query(
+        _public_media_query(db).filter(
+            Media.deleted_at.isnot(None),
+            Media.deleted_at < cutoff,
+        ),
+        user,
+    ).all()
+
+    deleted_ids: list[int] = []
+    failed_ids: list[int] = []
+
+    for media in media_rows:
+        try:
+            _delete_media_files(media)
+        except Exception as exc:  # noqa: BLE001
+            failed_ids.append(media.id)
+            logger.warning(
+                "Failed to delete media %s during trash purge: %s", media.id, exc
+            )
+            continue
+        db.delete(media)
+        deleted_ids.append(media.id)
+
+    if deleted_ids:
+        db.flush()
+        _remove_media_ids_from_clusters(db, set(deleted_ids))
+
+    db.commit()
+    if deleted_ids:
+        invalidate_query_cache()
+
+    return {
+        "message": f"Purged trash older than {retention_days} days",
+        "deleted_ids": deleted_ids,
+        "missing_ids": [],
+        "failed_ids": failed_ids,
+        "deleted_count": len(deleted_ids),
+        "missing_count": 0,
+        "failed_count": len(failed_ids),
+    }
+
+
 @router.post("/image/{media_id}/reprocess")
 def reprocess_image(
     media_id: int,
